@@ -1,0 +1,47 @@
+{
+  "hosting": {
+    "source": ".",
+    "ignore": [
+      "firebase.json",
+      ".firebaserc",
+      ".git/**",
+      ".gitignore",
+      "**/node_modules/**",
+      ".next/**",
+      "download/**",
+      "upload/**",
+      "tool-results/**",
+      "mini-services/**",
+      "examples/**",
+      "tests/**",
+      "*.log"
+    ],
+    "frameworksBackend": {
+      "region": "europe-west1",
+      "memory": "1GiB",
+      "minInstances": 0,
+      "maxInstances": 10,
+      "concurrency": 80
+    },
+    "headers": [
+      {
+        "source": "/icons/**",
+        "headers": [
+          { "key": "Cache-Control", "value": "public, max-age=31536000, immutable" }
+        ]
+      },
+      {
+        "source": "/brand/**",
+        "headers": [
+          { "key": "Cache-Control", "value": "public, max-age=31536000, immutable" }
+        ]
+      },
+      {
+        "source": "**/*.@(jpg|jpeg|png|gif|svg|webp|ico|woff|woff2)",
+        "headers": [
+          { "key": "Cache-Control", "value": "public, max-age=604800" }
+        ]
+      }
+    ]
+  }
+}

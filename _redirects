@@ -1,0 +1,4 @@
+# Cloudflare Pages routing rules (first match wins)
+# Serves the admin dashboard at clean URLs, same as Firebase cleanUrls.
+/admin/login /admin/login.html 200
+/admin /admin.html 200

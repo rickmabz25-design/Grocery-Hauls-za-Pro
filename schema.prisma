@@ -1,0 +1,246 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id             String   @id @default(cuid())
+  googleId       String?  @unique
+  email          String   @unique
+  name           String
+  image          String?
+  role           String   @default("user") // user | admin
+  whatsappNumber String?
+  whatsappOptIn  Boolean  @default(false)
+  isDemo         Boolean  @default(false)
+  createdAt      DateTime @default(now())
+  lastLoginAt    DateTime @default(now())
+
+  lists         ShoppingList[]
+  wishItems     WishListItem[]
+  notifications Notification[]
+  shopSessions  ShopSession[]
+  searchLogs    SearchLog[]
+  plans         ShoppingPlan[]
+}
+
+model Store {
+  id     String @id @default(cuid())
+  name   String @unique
+  color  String // brand colour for badges
+  emoji  String @default("🏬")
+  active Boolean @default(true)
+
+  prices     StorePrice[]
+  promotions Promotion[]
+  shopSessions ShopSession[]
+}
+
+model Category {
+  id        String @id @default(cuid())
+  name      String @unique
+  icon      String
+  sortOrder Int    @default(0)
+
+  products Product[]
+}
+
+model Product {
+  id          String  @id @default(cuid())
+  name        String
+  categoryId  String
+  barcode     String?
+  imageUrl    String?
+  description String?
+  unit        String? // e.g. "2L", "6 x 100g", "1kg"
+  brand       String?
+  active      Boolean @default(true)
+  createdAt   DateTime @default(now())
+
+  category   Category    @relation(fields: [categoryId], references: [id])
+  prices     StorePrice[]
+  listItems  ListItem[]
+  promotions Promotion[]
+  wishItems  WishListItem[]
+
+  @@index([name])
+  @@index([barcode])
+}
+
+model StorePrice {
+  id        String @id @default(cuid())
+  storeId   String
+  productId String
+  price     Float
+
+  store   Store   @relation(fields: [storeId], references: [id])
+  product Product @relation(fields: [productId], references: [id])
+
+  @@unique([storeId, productId])
+}
+
+model Promotion {
+  id          String   @id @default(cuid())
+  productId   String
+  storeId     String
+  promoPrice  Float
+  normalPrice Float
+  startDate   DateTime
+  endDate     DateTime
+  status      String   @default("published") // published | paused
+  source      String   @default("admin") // admin | import
+  createdAt   DateTime @default(now())
+
+  product Product @relation(fields: [productId], references: [id])
+  store   Store   @relation(fields: [storeId], references: [id])
+
+  @@index([status, endDate])
+}
+
+model ShoppingList {
+  id          String    @id @default(cuid())
+  userId      String
+  name        String
+  status      String    @default("active") // active | completed
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  completedAt DateTime?
+  lastTotal   Float?
+  lastSavings Float?
+
+  user         User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  items        ListItem[]
+  plans        ShoppingPlan[]
+  shopSessions ShopSession[]
+}
+
+model ListItem {
+  id            String  @id @default(cuid())
+  listId        String
+  productId     String?
+  manualName    String?
+  manualPrice   Float?
+  manualStoreId String?
+  quantity      Int     @default(1)
+  source        String  @default("catalogue") // catalogue | promo | manual | web-search
+  note          String?
+  createdAt     DateTime @default(now())
+
+  list    ShoppingList @relation(fields: [listId], references: [id], onDelete: Cascade)
+  product Product?     @relation(fields: [productId], references: [id])
+}
+
+model ShoppingPlan {
+  id         String   @id @default(cuid())
+  listId     String
+  userId     String
+  choice     String // cheapest | preferred | split
+  storeIds   Json // array of store ids
+  totalCost  Float
+  savings    Float
+  details    Json // per-store breakdown snapshot
+  createdAt  DateTime @default(now())
+
+  list ShoppingList @relation(fields: [listId], references: [id], onDelete: Cascade)
+  user User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model WishListItem {
+  id                String   @id @default(cuid())
+  userId            String
+  productId         String
+  targetPrice       Float?
+  preferredStoreIds Json // array of store ids
+  lastNotifiedPrice Float?
+  createdAt         DateTime @default(now())
+
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, productId])
+}
+
+model WhatsNewPost {
+  id          String   @id @default(cuid())
+  title       String
+  description String
+  imageUrl    String?
+  storeId     String?
+  tag         String   @default("new") // black-friday | festive | back-to-school | bulk | campaign | new
+  promoIds    Json // array of promotion ids
+  active      Boolean  @default(true)
+  datePosted  DateTime @default(now())
+}
+
+model Notification {
+  id        String   @id @default(cuid())
+  userId    String
+  type      String   @default("price-drop") // price-drop | info
+  title     String
+  body      String
+  read      Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model ShopSession {
+  id        String    @id @default(cuid())
+  userId    String
+  listId    String?
+  storeId   String
+  status    String    @default("active") // active | completed
+  startedAt DateTime  @default(now())
+  endedAt   DateTime?
+
+  user  User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  list  ShoppingList?     @relation(fields: [listId], references: [id], onDelete: SetNull)
+  store Store             @relation(fields: [storeId], references: [id])
+  items ShopSessionItem[]
+}
+
+model ShopSessionItem {
+  id         String  @id @default(cuid())
+  sessionId  String
+  productId  String?
+  name       String
+  price      Float
+  promoPrice Float?
+  quantity   Int     @default(1)
+  bought     Boolean @default(false)
+  source     String  @default("scan") // scan | manual | list
+
+  session ShopSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+}
+
+model SearchLog {
+  id        String   @id @default(cuid())
+  userId    String?
+  term      String
+  createdAt DateTime @default(now())
+
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+}
+
+model Upload {
+  id           String   @id @default(cuid())
+  filename     String
+  fileType     String // csv | xlsx | pdf | jpeg | png
+  fileSize     Int
+  uploadedBy   String
+  relatedStore String?
+  url          String?
+  createdAt    DateTime @default(now())
+}
+
+model AdminAccount {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  passwordHash String
+  addedBy      String?
+  createdAt    DateTime @default(now())
+}

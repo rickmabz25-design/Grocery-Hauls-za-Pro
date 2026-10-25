@@ -1,0 +1,17 @@
+{
+  "name": "Grocery Hauls za Pro",
+  "short_name": "Hauls za Pro",
+  "description": "Super Intelligence Budget Shopping — compare grocery specials across South African supermarkets and find your cheapest basket.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#1D4ED8",
+  "theme_color": "#1D4ED8",
+  "orientation": "portrait",
+  "icons": [
+    { "src": "/icons/icon-96.png", "sizes": "96x96", "type": "image/png" },
+    { "src": "/icons/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "/icons/icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "/icons/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ],
+  "splash_pages": null
+}
