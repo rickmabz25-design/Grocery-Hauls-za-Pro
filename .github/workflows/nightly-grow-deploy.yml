@@ -36,8 +36,9 @@ jobs:
       - name: Install packages
         run: npm ci --no-audit --no-fund
 
-      - name: Grow catalog (+15 products, skips if queue is empty)
-        run: bun scripts/grow-catalog.mjs --limit 15
+      - - name: Grow catalog
+  run: echo "Catalog growth paused until verified retailer prices are available"
+  
 
       - name: Stamp today's build date
         run: |
