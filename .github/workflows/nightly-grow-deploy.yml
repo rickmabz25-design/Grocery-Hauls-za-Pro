@@ -58,7 +58,7 @@ jobs:
         run: |
           git config user.name "grocery-grow-bot"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add db/custom.db scripts/catalog-seed.json public/data public/version.txt
+          git add -A -- db/custom.db public/data public/version.txt
           if git diff --cached --quiet; then
             echo "Nothing grew tonight (queue empty) — skipping commit"
           else
