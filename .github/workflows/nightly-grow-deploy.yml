@@ -42,6 +42,9 @@ jobs:
       - name: Stamp today's build date
         run: |
           DATE=$(date -u +%Y-%m-%d)
+          # Create the file if it's missing so a forgotten commit can never
+          # break the nightly pipeline again.
+          [ -f public/version.txt ] || echo "build: ${DATE} (auto)" > public/version.txt
           sed -i "s/^build:.*/build: ${DATE} (auto)/" public/version.txt
           cat public/version.txt
 

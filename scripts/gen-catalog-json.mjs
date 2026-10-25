@@ -13,7 +13,17 @@
 //               storeName, storeColor, promoPrice, normalPrice, discount,
 //               saved, startDate, endDate, createdAt }
 
-import { Database } from 'bun:sqlite'
+// Dual-runtime SQLite: prefer bun:sqlite when running under Bun, fall back
+// to node:sqlite (DatabaseSync) under plain Node (>=22.5). Both expose
+// prepare().all() with the same row shapes, so the rest of the script is
+// runtime-agnostic. This lets the static build run on CI images that ship
+// Node only (e.g. Cloudflare Pages) without requiring a Bun install.
+let Database
+try {
+  ;({ Database } = await import('bun:sqlite'))
+} catch {
+  ;({ DatabaseSync: Database } = await import('node:sqlite'))
+}
 import { mkdirSync, writeFileSync } from 'fs'
 import path from 'path'
 import { fileURLToPath } from 'url'
@@ -24,7 +34,10 @@ const ROOT = path.resolve(HERE, '..')
 const DB_PATH = process.env.CATALOG_DB || path.join(ROOT, 'db', 'custom.db')
 const OUT_DIR = path.join(ROOT, 'public', 'data')
 
-const db = new Database(DB_PATH, { readonly: true })
+// Bun spells the option "readonly"; Node spells it "readOnly" (and rejects
+// the other spelling in strict validation on some versions) — branch it.
+const IS_BUN = process.versions.bun !== undefined
+const db = IS_BUN ? new Database(DB_PATH, { readonly: true }) : new Database(DB_PATH, { readOnly: true })
 const q = (sql) => db.prepare(sql).all()
 
 // bun:sqlite returns DATETIME as epoch-ms numbers and BOOLEAN as 0/1;

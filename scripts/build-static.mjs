@@ -22,8 +22,32 @@ const API_DIR = path.join(ROOT, 'src', 'app', 'api')
 const STASH = path.join(ROOT, '.api-stash-static')
 const OUT_DIR = path.join(ROOT, 'out')
 
+// Prefer Bun when available (original setup); fall back to plain Node + npx
+// so the build also runs on CI images that only ship Node (e.g. Cloudflare
+// Pages). gen-catalog-json.mjs picks its SQLite driver the same way.
+function hasBun() {
+  try {
+    execSync('bun --version', { stdio: 'ignore' })
+    return true
+  } catch {
+    return false
+  }
+}
+const BUN = hasBun()
+const nodeMajor = Number(process.versions.node.split('.')[0])
+// node:sqlite needs --experimental-sqlite on Node 22.x; unflagged from 23+
+const nodeSqliteCmd =
+  !BUN && nodeMajor <= 22 ? 'node --experimental-sqlite' : 'node'
+
+console.log(`[build-static] runtime: ${BUN ? 'bun ' + execSync('bun --version').toString().trim() : 'node ' + process.versions.node}`)
+
 console.log('[build-static] 1/5 generating catalog JSON…')
-execSync('bun scripts/gen-catalog-json.mjs', { cwd: ROOT, stdio: 'inherit' })
+execSync(
+  BUN
+    ? 'bun scripts/gen-catalog-json.mjs'
+    : `${nodeSqliteCmd} scripts/gen-catalog-json.mjs`,
+  { cwd: ROOT, stdio: 'inherit' }
+)
 
 console.log('[build-static] 2/5 stashing src/app/api (static export cannot ship API routes)…')
 if (existsSync(API_DIR)) {
@@ -33,7 +57,7 @@ if (existsSync(API_DIR)) {
 
 try {
   console.log('[build-static] 3/5 next build (static export)…')
-  execSync('bunx next build', {
+  execSync(BUN ? 'bunx next build' : 'npx --no-install next build', {
     cwd: ROOT,
     stdio: 'inherit',
     env: { ...process.env, NEXT_PUBLIC_STATIC: '1' },
