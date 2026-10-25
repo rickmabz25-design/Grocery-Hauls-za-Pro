@@ -5,7 +5,7 @@ import { useApp } from '@/lib/store'
 import { apiPatch, apiPost } from '@/lib/api'
 import { toast } from '@/hooks/use-toast'
 import { isValidSAMobile, WHATSAPP_BANNER, DISCLAIMER_PRICES } from '@/lib/format'
-import { TEST_LINK } from '@/lib/constants'
+import { APP_SHARE_URL } from '@/lib/constants'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Switch } from '@/components/ui/switch'
@@ -18,11 +18,20 @@ export function ProfileView() {
   const [whatsapp, setWhatsapp] = useState(user?.whatsappNumber ?? '')
   const [optIn, setOptIn] = useState(user?.whatsappOptIn ?? false)
   const [saving, setSaving] = useState(false)
+  // Actual origin the app is being served from (correct on any domain).
+  // Falls back to the canonical Pages URL during static pre-render.
+  const [shareUrl, setShareUrl] = useState(APP_SHARE_URL)
 
   useEffect(() => {
     setWhatsapp(user?.whatsappNumber ?? '')
     setOptIn(user?.whatsappOptIn ?? false)
   }, [user])
+
+  useEffect(() => {
+    if (typeof window !== 'undefined' && window.location?.origin) {
+      setShareUrl(window.location.origin)
+    }
+  }, [])
 
   const saveWhatsApp = async () => {
     setSaving(true)
@@ -142,11 +151,11 @@ export function ProfileView() {
           <QrCode className="h-4 w-4 text-blue-600" /> Share the app
         </h2>
         <p className="text-xs text-zinc-500 mt-1.5 leading-relaxed">
-          Test link: <span className="font-semibold text-zinc-700">{TEST_LINK}</span>
+          App link: <span className="font-semibold text-zinc-700 break-all">{shareUrl}</span>
         </p>
         <p className="text-[11px] text-zinc-400 mt-1 leading-relaxed">
-          Scan the QR code provided with the app package, or open this link on your phone. Install it
-          from your browser menu (“Add to Home Screen”) for a full-screen app experience.
+          Share this link to let friends and family install the app. Open it on your phone and use
+          your browser menu (“Add to Home Screen”) for a full-screen app experience.
         </p>
       </div>
 

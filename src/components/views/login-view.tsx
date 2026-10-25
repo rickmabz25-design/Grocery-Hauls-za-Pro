@@ -5,7 +5,6 @@ import { useApp } from '@/lib/store'
 import { apiPost, STATIC_MODE } from '@/lib/api'
 import { sessionUserFromFirebase } from '@/lib/static-session'
 import { Loader2 } from 'lucide-react'
-import { TEST_LINK } from '@/lib/constants'
 import {
   getFirebaseAuth,
   getRedirectResult,
@@ -184,7 +183,6 @@ export function LoginView() {
         <div className="text-center mt-6 text-sky-100 text-xs leading-relaxed">
           <p className="font-semibold text-white">Compare prices at 7 SA stores</p>
           <p>Boxer • Shoprite • Checkers • Pick n Pay • Woolworths • SPAR • Clicks</p>
-          <p className="mt-2 opacity-75">Test link: {TEST_LINK}</p>
         </div>
       </div>
     </div>

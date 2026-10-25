@@ -62,6 +62,15 @@ async function staticGet<T>(path: string): Promise<T> {
       const res = await fetch('/data/promos.json')
       promosCache = ((await res.json()) as { promos: PromoCard[] }).promos
     }
+    // Runtime freshness guard: /data/promos.json is generated at build time,
+    // so if the site hasn't been rebuilt recently the snapshot can contain
+    // promos that have since expired (or start in the future). The SSR API
+    // filters these via SQL `where` clauses — mirror that here so users never
+    // see stale/expired specials no matter how old the deploy is.
+    const now = new Date()
+    promosCache = promosCache.filter(
+      (c) => new Date(c.startDate) <= now && new Date(c.endDate) >= now
+    )
     const storeId = sp.get('store') || ''
     const categoryId = sp.get('category') || ''
     const sort = sp.get('sort') || 'discount'

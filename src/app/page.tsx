@@ -38,8 +38,9 @@ function Splash() {
   )
 }
 
-// Shown on the Spark static build when /#/admin is opened: the admin console
-// writes through server APIs, which the free-plan static hosting cannot run.
+// Shown on the static build when /#/admin is opened: the admin console
+// writes through server APIs, which static hosting (Cloudflare Pages /
+// Firebase Spark free plan) cannot run.
 function SparkAdminPanel() {
   return (
     <div className="min-h-screen flex flex-col items-center justify-center bg-sky-50 px-6 text-center">
@@ -47,8 +48,8 @@ function SparkAdminPanel() {
       <div className="bg-white rounded-3xl shadow-lg border border-sky-100 p-6 max-w-sm">
         <h1 className="font-bold text-lg mb-2">Admin console unavailable</h1>
         <p className="text-sm text-zinc-600 leading-relaxed">
-          The admin console edits catalog data through server APIs. This site is on the Firebase
-          <span className="font-semibold"> Spark (free) static hosting</span>, which cannot run
+          The admin console edits catalog data through server APIs. This site is on
+          <span className="font-semibold"> static hosting</span>, which cannot run
           server code. Manage the catalog from the local preview and redeploy to publish changes.
         </p>
       </div>
