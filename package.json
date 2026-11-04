@@ -14,7 +14,9 @@
     "db:reset": "prisma migrate reset",
     "deploy": "npm run build:static && firebase deploy --only hosting",
     "deploy:ssr": "firebase deploy --only hosting --config firebase.ssr.json",
-    "db:to-postgres": "bun scripts/migrate-sqlite-to-postgres.mjs"
+    "db:to-postgres": "bun scripts/migrate-sqlite-to-postgres.mjs",
+    "test": "node --import tsx scripts/test-restore.mjs",
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",
@@ -53,6 +55,7 @@
     "@reactuses/core": "^6.0.5",
     "@tanstack/react-query": "^5.82.0",
     "@tanstack/react-table": "^8.21.3",
+    "@zxing/browser": "^0.2.1",
     "@zxing/library": "^0.23.0",
     "bcryptjs": "^3.0.3",
     "class-variance-authority": "^0.7.1",
@@ -105,6 +108,7 @@
     "eslint-config-next": "^16.1.1",
     "firebase-tools": "15.34.0",
     "tailwindcss": "^4",
+    "tsx": "^4.23.15",
     "tw-animate-css": "^1.3.5",
     "typescript": "^5"
   },
