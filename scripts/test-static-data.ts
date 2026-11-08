@@ -239,8 +239,10 @@ check('wishlist delete', wl3.items.length === 0)
 
 // =========================== 7. router passthrough ===========================
 console.log('7. Router boundaries')
-const notHandled = await handleStaticApi('GET', '/api/notifications', undefined, ctx)
-check('unhandled path returns null (falls back)', notHandled === null)
+const notifications = await GET('/api/notifications') as { notifications: unknown[]; unread: number }
+check('notifications return a local empty state', Array.isArray(notifications.notifications) && notifications.notifications.length === 0 && notifications.unread === 0)
+const notHandled = await handleStaticApi('GET', '/api/not-a-real-feature', undefined, ctx)
+check('unknown paths return null (falls back)', notHandled === null)
 const del404 = await DEL('/api/lists/local_missing').catch((e: Error) => e)
 check('missing list 404s with message', (del404 as Error).message === 'List not found')
 
