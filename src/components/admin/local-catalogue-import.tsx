@@ -145,7 +145,7 @@ export function LocalCatalogueImport() {
         const candidates = lines.map((line, index) => {
           const prices = line.match(pricePattern) || []
           const name = line.replace(pricePattern, ' ').replace(/\b(?:special|save|was|now|each|per)\b/gi, ' ').replace(/\s+/g, ' ').replace(/^[^\p{L}\p{N}]+|[^\p{L}\p{N}]+$/gu, '').trim()
-          return { id: index + 1, name, normalPrice: prices.length > 1 ? prices[0].replace(/R\s*/i, '') : '', promoPrice: prices.length ? prices[prices.length - 1].replace(/R\s*/i, '') : '', sourceLine: line }
+          return { id: index + 1, name, normalPrice: prices.length > 1 ? (prices[0]?.replace(/R\s*/i, '') || '') : '', promoPrice: prices.length ? (prices[prices.length - 1]?.replace(/R\s*/i, '') || '') : '', sourceLine: line }
         }).filter(row => row.promoPrice && row.name.length >= 3)
         setFlyerCandidates(candidates)
         setFlyerOcrStatus(`Recognised ${lines.length} text lines; ${candidates.length} possible product/price rows found. Check every row carefully.`)
