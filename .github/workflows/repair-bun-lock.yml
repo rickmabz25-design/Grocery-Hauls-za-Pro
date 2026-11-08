@@ -1,0 +1,40 @@
+name: Repair Bun lockfile
+
+on:
+  push:
+    branches:
+      - restore/v15-phase2
+
+permissions:
+  contents: write
+
+jobs:
+  sync-lockfile:
+    if: "!startsWith(github.event.head_commit.message, 'chore: sync bun lockfile')"
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out recovery branch
+        uses: actions/checkout@v4
+        with:
+          ref: restore/v15-phase2
+          fetch-depth: 0
+
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Regenerate lockfile without installing packages
+        run: bun install --lockfile-only
+
+      - name: Commit updated lockfile
+        run: |
+          if git diff --quiet -- bun.lock; then
+            echo "bun.lock is already synchronized."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add bun.lock
+          git commit -m "chore: sync bun lockfile"
+          git push origin restore/v15-phase2
