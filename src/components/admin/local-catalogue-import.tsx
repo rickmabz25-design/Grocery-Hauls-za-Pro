@@ -99,6 +99,9 @@ export function LocalCatalogueImport() {
       if (!row.storeName || !stores.some(s => s.name.toLowerCase() === row.storeName.toLowerCase())) {
         issues.push({ code: 'unknown-store', message: `Store “${row.storeName || '(blank)'}” is not in the store catalogue`, severity: 'error' as const })
       }
+      if (row.promoPrice != null && row.normalPrice == null) {
+        issues.push({ code: 'promo-normal-required', message: 'Promotion rows need a normal price as well as the promo price', severity: 'error' as const })
+      }
       if (row.promoPrice != null && (!row.startDate || !row.endDate)) {
         issues.push({ code: 'promo-dates-required', message: 'Promotion rows need valid start and end dates', severity: 'error' as const })
       }
