@@ -1,5 +1,5 @@
 // Unit tests for the Phase 2 import pipeline (run: bun scripts/test-import.ts)
-import { parsePrice, parseDate, buildReviewRows, reviewSummary, rowHasError, autoMap, normName, pubKey } from '../src/lib/import-review'
+import { parsePrice, parseDate, buildReviewRows, reviewSummary, rowHasError, autoMap, normName, pubKey, isLikelyUnstructuredFlyer } from '../src/lib/import-review'
 
 let pass = 0
 let fail = 0
@@ -32,6 +32,11 @@ ok(parseDate('not a date') === null, 'garbage -> null (falls through)')
 console.log('--- normName / pubKey ---')
 ok(normName('  Clover  Full-Cream Milk 2L ') === 'clover full cream milk 2l', 'name normalised')
 ok(pubKey('Milk 2L', 'Pick n Pay') === pubKey('milk  2L!', 'picknpay'), 'dup key matches across formats')
+
+console.log('--- unstructured flyer detection ---')
+ok(isLikelyUnstructuredFlyer(['A very long flyer OCR text block '.repeat(5)], [{ ['A very long flyer OCR text block '.repeat(5)]: 'prices and products' }]), 'single long OCR text cell is detected as an unstructured flyer')
+ok(!isLikelyUnstructuredFlyer(['Product Name'], [{ 'Product Name': 'Milk' }]), 'normal one-column product table is not treated as a flyer')
+ok(!isLikelyUnstructuredFlyer(['Product', 'Price'], [{ Product: 'Milk', Price: 'R20' }]), 'normal multi-column spreadsheet is not treated as a flyer')
 
 console.log('--- autoMap ---')
 const headers = ['Product Description', 'Selling Price', 'Was Price', 'Pack', 'Valid To', 'Store']
