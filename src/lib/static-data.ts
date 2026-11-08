@@ -31,7 +31,7 @@ const readState = (ctx?: StaticContext): AnyRecord => {
   if (typeof window === 'undefined') return { lists: [], items: [], plans: [], wishlist: [], shopSessions: [], notifications: [], profile: null }
   try {
     const raw = window.localStorage.getItem(storageKey(ctx))
-    if (!raw) return { lists: [], items: [], plans: [], wishlist: [] }
+    if (!raw) return { lists: [], items: [], plans: [], wishlist: [], shopSessions: [], notifications: [], profile: null }
     const parsed = JSON.parse(raw)
     return {
       lists: Array.isArray(parsed.lists) ? parsed.lists : [],
@@ -43,7 +43,7 @@ const readState = (ctx?: StaticContext): AnyRecord => {
       profile: parsed.profile || null,
     }
   } catch {
-    return { lists: [], items: [], plans: [], wishlist: [] }
+    return { lists: [], items: [], plans: [], wishlist: [], shopSessions: [], notifications: [], profile: null }
   }
 }
 const writeState = (state: AnyRecord, ctx?: StaticContext) => {
