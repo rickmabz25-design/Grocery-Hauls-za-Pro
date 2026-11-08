@@ -319,10 +319,10 @@ export async function handleStaticApi(method: string, path: string, body?: AnyRe
     if (action === 'items' && verb === 'PATCH') {
       const item = session.items.find((i: AnyRecord) => i.id === body?.itemId)
       if (!item) fail('Item not found')
-      if (body.quantity != null) item.quantity = Math.max(1, Math.min(99, number(body.quantity, 1)))
-      if (body.bought != null) item.bought = Boolean(body.bought)
-      if (body.price != null && Number.isFinite(Number(body.price)) && Number(body.price) >= 0) item.price = Number(body.price)
-      if (body.promoPrice !== undefined) item.promoPrice = body.promoPrice
+      if (body?.quantity != null) item.quantity = Math.max(1, Math.min(99, number(body.quantity, 1)))
+      if (body?.bought != null) item.bought = Boolean(body.bought)
+      if (body?.price != null && Number.isFinite(Number(body.price)) && Number(body.price) >= 0) item.price = Number(body.price)
+      if (body?.promoPrice !== undefined) item.promoPrice = body.promoPrice
       save(); return { item }
     }
     if (action === 'items' && verb === 'DELETE') {
