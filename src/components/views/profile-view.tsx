@@ -5,7 +5,7 @@ import { useApp } from '@/lib/store'
 import { apiPatch, apiPost } from '@/lib/api'
 import { toast } from '@/hooks/use-toast'
 import { isValidSAMobile, WHATSAPP_BANNER, DISCLAIMER_PRICES } from '@/lib/format'
-import { APP_SHARE_URL } from '@/lib/constants'
+import { ADMIN_EMAIL_PRIMARY, APP_SHARE_URL } from '@/lib/constants'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Switch } from '@/components/ui/switch'
@@ -160,7 +160,7 @@ export function ProfileView() {
       </div>
 
       {/* Admin */}
-      {user.role === 'admin' && (
+      {(user.role === 'admin' || user.email?.trim().toLowerCase() === ADMIN_EMAIL_PRIMARY.toLowerCase()) && (
         <button
           onClick={() => {
             window.location.hash = '#/admin'
