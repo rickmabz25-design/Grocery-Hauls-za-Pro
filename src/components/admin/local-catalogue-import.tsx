@@ -35,6 +35,9 @@ export function LocalCatalogueImport() {
   const [defaultStore, setDefaultStore] = useState('')
   const [file, setFile] = useState<ParsedFile | null>(null)
   const [fileNotice, setFileNotice] = useState('')
+  const [flyerUrl, setFlyerUrl] = useState('')
+  const [flyerPreviewUrl, setFlyerPreviewUrl] = useState('')
+  const [flyerImageError, setFlyerImageError] = useState(false)
   const [mapping, setMapping] = useState<Record<string, string>>({})
   const [rows, setRows] = useState<ImportReviewRow[]>([])
   const [busy, setBusy] = useState(false)
@@ -164,6 +167,50 @@ export function LocalCatalogueImport() {
       <select value={defaultStore} onChange={e => setDefaultStore(e.target.value)} className="w-full rounded-lg border border-zinc-700 bg-zinc-800 p-2.5 text-sm text-white">
         {stores.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
       </select>
+      <div className="space-y-2 rounded-xl border border-zinc-700 bg-zinc-800/60 p-3">
+        <label htmlFor="flyer-image-url" className="block text-[10px] font-bold uppercase text-zinc-400">Or paste a direct flyer page image link</label>
+        <input
+          id="flyer-image-url"
+          type="url"
+          value={flyerUrl}
+          onChange={e => { setFlyerUrl(e.target.value); setFlyerImageError(false) }}
+          placeholder="https://example.co.za/flyer-page.jpg"
+          className="w-full rounded-lg border border-zinc-700 bg-zinc-900 p-2.5 text-xs text-white"
+        />
+        <Button
+          type="button"
+          variant="outline"
+          disabled={!flyerUrl.trim()}
+          onClick={() => {
+            try {
+              const parsed = new URL(flyerUrl.trim())
+              if (parsed.protocol !== 'https:' || !/\\.(jpe?g|png|webp)(?:$|[?#])/i.test(parsed.href)) {
+                throw new Error('Use a secure HTTPS link ending in JPG, PNG or WEBP.')
+              }
+              setFlyerPreviewUrl(parsed.href)
+              setFlyerImageError(false)
+            } catch (error) {
+              setFlyerPreviewUrl('')
+              setFlyerImageError(true)
+              toast({ title: 'Flyer image link not accepted', description: error instanceof Error ? error.message : 'Check the link and try again.', variant: 'destructive' })
+            }
+          }}
+          className="border-zinc-600 text-zinc-200"
+        >Preview flyer page</Button>
+        {flyerImageError && <p role="alert" className="text-xs text-amber-300">The link could not be loaded. Check that it is a direct HTTPS image link.</p>}
+        {flyerPreviewUrl && <div className="space-y-2">
+          <p className="text-xs text-sky-300">Flyer page preview — this does not import prices yet.</p>
+          <div className="max-h-96 overflow-auto rounded-lg border border-zinc-700 bg-zinc-950 p-2">
+            <img
+              src={flyerPreviewUrl}
+              alt="Preview of the pasted retailer flyer page"
+              className="mx-auto h-auto max-w-full"
+              onError={() => setFlyerImageError(true)}
+            />
+          </div>
+          {flyerImageError && <p role="alert" className="text-xs text-amber-300">This image host did not allow the browser to display the image. Try a direct image link from another source.</p>}
+        </div>}
+      </div>
       <label className="flex cursor-pointer items-center justify-center gap-2 rounded-xl border-2 border-dashed border-zinc-700 p-5 text-sm text-zinc-300 hover:border-sky-400">
         <Upload className="h-5 w-5" /> Choose CSV / Excel file
         <input type="file" accept=".csv,.xlsx,.xls" className="hidden" onChange={e => { const f = e.target.files?.[0]; if (f) void parseFile(f); e.currentTarget.value = '' }} />
