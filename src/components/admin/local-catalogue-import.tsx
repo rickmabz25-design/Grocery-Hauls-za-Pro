@@ -139,13 +139,13 @@ export function LocalCatalogueImport() {
       const worker = await w.Tesseract.createWorker('eng', 1)
       try {
         const result = await worker.recognize(canvas)
-        const lines = (result.data.lines || result.data.text.split(/\\r?\\n/).map(text => ({ text }))).map(line => line.text.trim()).filter(Boolean)
-        setFlyerOcrText(lines.join('\\n'))
-        const pricePattern = /(?:R\\s*)?\\d{1,4}(?:[ ,]\\d{3})*(?:[.,]\\d{2})/gi
+        const lines = (result.data.lines || result.data.text.split(/\r?\n/).map(text => ({ text }))).map(line => line.text.trim()).filter(Boolean)
+        setFlyerOcrText(lines.join('\n'))
+        const pricePattern = /(?:R\s*)?\d{1,4}(?:[ ,]\d{3})*(?:[.,]\d{2})/gi
         const candidates = lines.map((line, index) => {
           const prices = line.match(pricePattern) || []
-          const name = line.replace(pricePattern, ' ').replace(/\\b(?:special|save|was|now|each|per)\\b/gi, ' ').replace(/\\s+/g, ' ').replace(/^[^\\p{L}\\p{N}]+|[^\\p{L}\\p{N}]+$/gu, '').trim()
-          return { id: index + 1, name, normalPrice: prices.length > 1 ? prices[0].replace(/R\\s*/i, '') : '', promoPrice: prices.length ? prices[prices.length - 1].replace(/R\\s*/i, '') : '', sourceLine: line }
+          const name = line.replace(pricePattern, ' ').replace(/\b(?:special|save|was|now|each|per)\b/gi, ' ').replace(/\s+/g, ' ').replace(/^[^\p{L}\p{N}]+|[^\p{L}\p{N}]+$/gu, '').trim()
+          return { id: index + 1, name, normalPrice: prices.length > 1 ? prices[0].replace(/R\s*/i, '') : '', promoPrice: prices.length ? prices[prices.length - 1].replace(/R\s*/i, '') : '', sourceLine: line }
         }).filter(row => row.promoPrice && row.name.length >= 3)
         setFlyerCandidates(candidates)
         setFlyerOcrStatus(`Recognised ${lines.length} text lines; ${candidates.length} possible product/price rows found. Check every row carefully.`)
