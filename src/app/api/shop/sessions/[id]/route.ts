@@ -16,7 +16,7 @@ export async function GET(req: NextRequest, ctx: Ctx) {
     include: {
       store: true,
       items: { orderBy: { id: 'asc' } },
-      list: { include: { items: true } },
+      list: { include: { items: { include: { product: true } } } },
     },
   })
   if (!session) return notFound('Session not found')
