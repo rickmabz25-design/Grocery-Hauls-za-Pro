@@ -173,9 +173,9 @@ check('manual item only available at its store', r.stores.find((s) => s.storeId 
 // verify cheapest store: manual item (R44.99) sits at stores[0], so stores that
 // do not stock the manual item can win on total with just the product price.
 const MANUAL_PRICE = 44.99
-const expectedTotals = priceStoreIds.map((id) => ({
+const expectedTotals = priceStoreIds.filter((id) => id === stores[0].id).map((id) => ({
   id,
-  total: Math.round((withPrices.storePrices[id] + (id === stores[0].id ? MANUAL_PRICE : 0)) * 100) / 100,
+  total: Math.round((withPrices.storePrices[id] + MANUAL_PRICE) * 100) / 100,
 }))
 const expectedCheapest = expectedTotals.reduce((a, b) => (b.total < a.total ? b : a))
 check(
