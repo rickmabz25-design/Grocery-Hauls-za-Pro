@@ -78,7 +78,7 @@ export async function applyLocalCatalogueImport(rows: Array<{
   startDate?: string | null; endDate?: string | null;
 }>) {
   if (typeof window === 'undefined') throw new Error('Catalogue imports require a browser')
-  const [baseProducts, stores, categories] = await Promise.all([jsonFile<{ products: AnyRecord[] }>('/data/products.json'), getStores(), getCategories()])
+  const [baseProducts, basePromos, stores, categories] = await Promise.all([jsonFile<{ products: AnyRecord[] }>('/data/products.json'), jsonFile<{ promos: AnyRecord[] }>('/data/promos.json'), getStores(), getCategories()])
   const overrides = readCatalogueOverrides()
   const products = [...overrides.products]
   const promos = [...overrides.promos]
@@ -119,7 +119,7 @@ export async function applyLocalCatalogueImport(rows: Array<{
     }
     if (row.promoPrice != null) {
       if (row.normalPrice == null || !row.startDate || !row.endDate) throw new Error(`Promotion for ${row.name} needs normal price and valid start/end dates`)
-      const existing = promos.find((p) => p.productId === product.id && p.storeId === store.id && p.startDate?.slice(0, 10) === row.startDate && p.endDate?.slice(0, 10) === row.endDate)
+      const existing = promos.find((p) => p.productId === product.id && p.storeId === store.id && p.startDate?.slice(0, 10) === row.startDate && p.endDate?.slice(0, 10) === row.endDate) || basePromos.promos.find((p) => p.productId === product.id && p.storeId === store.id && p.startDate?.slice(0, 10) === row.startDate && p.endDate?.slice(0, 10) === row.endDate)
       const promo = {
         id: existing?.id || makeId(), productId: product.id, name: product.name, unit: product.unit,
         category: product.category, storeId: store.id, storeName: store.name, storeColor: store.color,
