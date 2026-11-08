@@ -39,8 +39,8 @@ export function LocalCatalogueImport() {
   const [flyerUrl, setFlyerUrl] = useState('')
   const [flyerPreviewUrl, setFlyerPreviewUrl] = useState('')
   const [flyerImageError, setFlyerImageError] = useState(false)
-  const [flyerStartDate, setFlyerStartDate] = useState('')
-  const [flyerEndDate, setFlyerEndDate] = useState('')
+  const [flyerStartDate, setFlyerStartDate] = useState('2026-10-22')
+  const [flyerEndDate, setFlyerEndDate] = useState('2026-11-08')
   const [flyerOcrBusy, setFlyerOcrBusy] = useState(false)
   const [flyerOcrStatus, setFlyerOcrStatus] = useState('')
   const [flyerOcrText, setFlyerOcrText] = useState('')
@@ -274,6 +274,9 @@ export function LocalCatalogueImport() {
           className="border-zinc-600 text-zinc-200"
         >Preview flyer page</Button>
         {flyerImageError && <p role="alert" className="text-xs text-amber-300">The link could not be loaded. Check that it is a direct HTTPS image link.</p>}
+        <label className="block text-xs text-zinc-300">If the image host blocks OCR, choose the same flyer page from your computer:
+          <input type="file" accept="image/jpeg,image/png,image/webp" className="mt-2 block w-full text-xs text-zinc-400" onChange={e => { const selected = e.target.files?.[0]; if (selected) { const localUrl = URL.createObjectURL(selected); setFlyerUrl(''); setFlyerPreviewUrl(localUrl); setFlyerImageError(false) } e.currentTarget.value = '' }} />
+        </label>
         {flyerPreviewUrl && <div className="space-y-3">
           <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
             <label className="text-[10px] font-bold uppercase text-zinc-400">Promotion valid from
