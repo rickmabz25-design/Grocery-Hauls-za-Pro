@@ -177,7 +177,7 @@ export default function Page() {
   }
 
   if (!booted || !adminChecked) return <Splash />
-  if (isAdminArea) return STATIC_MODE ? <SparkAdminPanel /> : <AdminView />
+  if (isAdminArea) return <AdminView />
   if (!user) return <LoginView />
 
   return (
