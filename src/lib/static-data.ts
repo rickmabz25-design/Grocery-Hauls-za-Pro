@@ -87,10 +87,11 @@ export async function applyLocalCatalogueImport(rows: Array<{
   for (const row of rows) {
     const store = stores.find((s) => s.id === row.storeId)
     if (!store) throw new Error(`Unknown store for ${row.name}`)
-    let product = products.find((p) => p.name.toLowerCase() === row.name.toLowerCase()) ||
+    const foundProduct = products.find((p) => p.name.toLowerCase() === row.name.toLowerCase()) ||
       baseProducts.products.find((p) => p.name.toLowerCase() === row.name.toLowerCase())
-    if (product && !products.some((p) => p.id === product.id)) {
-      product = { ...product, storePrices: { ...(product.storePrices || {}) } }
+    let product = foundProduct
+    if (foundProduct && !products.some((p) => p.id === foundProduct.id)) {
+      product = { ...foundProduct, storePrices: { ...(foundProduct.storePrices || {}) } }
       products.push(product)
     }
     if (!product) {
