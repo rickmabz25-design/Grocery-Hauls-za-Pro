@@ -132,7 +132,8 @@ async function compareList(state: AnyRecord, listId: string, storeIds: string[],
       cheapest: false, mostExpensive: false, preferred: store.id === preferred,
     }
   })
-  const ranked = storeResults.filter((s) => s.available > 0).sort((a, b) => a.total - b.total)
+  // Only rank stores that can supply the entire basket; partial baskets must not be labelled cheapest.
+  const ranked = storeResults.filter((s) => s.available > 0 && s.missing === 0).sort((a, b) => a.total - b.total)
   const cheapest = ranked[0] || null
   const mostExpensive = ranked.length > 1 ? ranked[ranked.length - 1] : null
   storeResults.forEach((s) => { s.cheapest = s.storeId === cheapest?.storeId; s.mostExpensive = s.storeId === mostExpensive?.storeId })
