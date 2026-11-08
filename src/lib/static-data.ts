@@ -119,7 +119,9 @@ export async function applyLocalCatalogueImport(rows: Array<{
     }
     if (row.promoPrice != null) {
       if (row.normalPrice == null || !row.startDate || !row.endDate) throw new Error(`Promotion for ${row.name} needs normal price and valid start/end dates`)
-      const existing = promos.find((p) => p.productId === product.id && p.storeId === store.id && p.startDate?.slice(0, 10) === row.startDate && p.endDate?.slice(0, 10) === row.endDate) || basePromos.promos.find((p) => p.productId === product.id && p.storeId === store.id && p.startDate?.slice(0, 10) === row.startDate && p.endDate?.slice(0, 10) === row.endDate)
+      const existingOverride = promos.find((p) => p.productId === product.id && p.storeId === store.id && p.startDate?.slice(0, 10) === row.startDate && p.endDate?.slice(0, 10) === row.endDate)
+      const existingBase = basePromos.promos.find((p) => p.productId === product.id && p.storeId === store.id && p.startDate?.slice(0, 10) === row.startDate && p.endDate?.slice(0, 10) === row.endDate)
+      const existing = existingOverride || existingBase
       const promo = {
         id: existing?.id || makeId(), productId: product.id, name: product.name, unit: product.unit,
         category: product.category, storeId: store.id, storeName: store.name, storeColor: store.color,
@@ -129,8 +131,8 @@ export async function applyLocalCatalogueImport(rows: Array<{
         startDate: `${row.startDate}T00:00:00.000Z`, endDate: `${row.endDate}T23:59:59.999Z`,
         createdAt: existing?.createdAt || nowIso(),
       }
-      if (existing) Object.assign(existing, promo)
-      else { promos.push(promo); promosCreated++ }
+      if (existingOverride) Object.assign(existingOverride, promo)
+      else { promos.push(promo); if (!existingBase) promosCreated++ }
     }
   }
   window.localStorage.setItem(CATALOGUE_OVERRIDE_KEY, JSON.stringify({ products, promos }))
