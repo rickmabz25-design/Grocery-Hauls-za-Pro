@@ -167,7 +167,7 @@ const getPromos = async (ctx?: StaticContext) => {
   if (ctx?.mergedPromos) return ctx.mergedPromos()
   const base = (await jsonFile<{ promos: AnyRecord[] }>('/data/promos.json')).promos
   const overrides = readCatalogueOverrides().promos
-  const merged = new Map(base.map((p) => [p.id, p]))
+  const merged = new Map<string, AnyRecord>(base.map((p): [string, AnyRecord] => [p.id, p]))
   overrides.forEach((p) => merged.set(p.id, p))
   return [...merged.values()]
 }
