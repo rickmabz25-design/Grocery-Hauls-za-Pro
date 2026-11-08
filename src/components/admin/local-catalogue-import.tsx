@@ -140,12 +140,12 @@ export function LocalCatalogueImport() {
     }
   }
 
-  const exportCatalogue = async () => {
+  const exportCatalogueFile = async (kind: 'products' | 'promos') => {
     try {
       const snapshot = await exportLocalCatalogueSnapshot()
-      downloadJson('products.json', { products: snapshot.products })
-      downloadJson('promos.json', { promos: snapshot.promos })
-      toast({ title: 'Catalogue exports ready', description: 'Downloaded products.json and promos.json. Review them before publishing.' })
+      if (kind === 'products') downloadJson('products.json', { products: snapshot.products })
+      else downloadJson('promos.json', { promos: snapshot.promos })
+      toast({ title: 'Catalogue file exported', description: `${kind}.json downloaded. Review it before publishing.` })
     } catch (error) {
       toast({ title: 'Export failed', description: error instanceof Error ? error.message : 'Could not export catalogue.', variant: 'destructive' })
     }
@@ -204,7 +204,7 @@ export function LocalCatalogueImport() {
     <section className="rounded-2xl border border-zinc-800 bg-zinc-900 p-5 space-y-2">
       <h3 className="font-bold text-sm">Export approved catalogue</h3>
       <p className="text-xs text-zinc-400">Download the merged catalogue snapshots after importing. These files are for a separate, reviewed repository update; this button does not deploy or publish anything.</p>
-      <Button variant="outline" onClick={exportCatalogue} className="border-zinc-700 text-zinc-200"><Download className="mr-2 h-4 w-4" /> Export products.json + promos.json</Button>
+      <div className="flex flex-wrap gap-2"><Button variant="outline" onClick={() => exportCatalogueFile('products')} className="border-zinc-700 text-zinc-200"><Download className="mr-2 h-4 w-4" /> Export products.json</Button><Button variant="outline" onClick={() => exportCatalogueFile('promos')} className="border-zinc-700 text-zinc-200"><Download className="mr-2 h-4 w-4" /> Export promos.json</Button></div>
     </section>
   </div>
 }
