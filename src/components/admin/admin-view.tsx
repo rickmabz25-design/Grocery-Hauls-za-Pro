@@ -1,7 +1,8 @@
 'use client'
 
 import { useCallback, useEffect, useState } from 'react'
-import { apiGet, apiPost, apiPatch, apiDelete, apiUpload } from '@/lib/api'
+import { apiGet, apiPost, apiPatch, apiDelete, apiUpload, STATIC_MODE } from '@/lib/api'
+import { LocalCatalogueImport } from '@/components/admin/local-catalogue-import'
 import { toast } from '@/hooks/use-toast'
 import { formatZAR, formatShortDate } from '@/lib/format'
 import { ADMIN_EMAIL_PRIMARY } from '@/lib/constants'
@@ -30,14 +31,20 @@ const tabs: { key: AdminTab; label: string; icon: React.ComponentType<{ classNam
 export function AdminView() {
   const [admin, setAdmin] = useState<{ email: string } | null>(null)
   const [checking, setChecking] = useState(true)
-  const [tab, setTab] = useState<AdminTab>('overview')
+  const [tab, setTab] = useState<AdminTab>('import')
+  const currentUser = useApp((s) => s.user)
 
   useEffect(() => {
+    if (STATIC_MODE) {
+      setAdmin(currentUser?.email?.toLowerCase() === ADMIN_EMAIL_PRIMARY.toLowerCase() ? { email: currentUser.email } : null)
+      setChecking(false)
+      return
+    }
     apiGet<{ admin: { email: string } | null }>('/api/admin/login')
       .then((d) => setAdmin(d.admin))
       .catch(() => setAdmin(null))
       .finally(() => setChecking(false))
-  }, [])
+  }, [currentUser?.email])
 
   const exitAdmin = () => {
     window.location.hash = ''
@@ -49,6 +56,7 @@ export function AdminView() {
   }
 
   if (!admin) {
+    if (STATIC_MODE) return <div className="min-h-screen bg-zinc-950 flex flex-col items-center justify-center gap-3 px-5 text-center text-zinc-200"><h1 className="text-lg font-bold">Local admin access restricted</h1><p className="max-w-sm text-sm text-zinc-400">Sign in with the approved Google account ({ADMIN_EMAIL_PRIMARY}) to use the browser-local catalogue tools.</p><Button onClick={exitAdmin} variant="outline">Back to app</Button></div>
     return <AdminLogin onLogin={(email) => setAdmin({ email })} onExit={exitAdmin} />
   }
 
@@ -71,7 +79,7 @@ export function AdminView() {
           <Button variant="outline" size="sm" className="border-zinc-700 text-zinc-300 hover:bg-zinc-800" onClick={exitAdmin}>
             <ArrowLeft className="h-4 w-4 mr-1" /> App
           </Button>
-          <Button
+          {!STATIC_MODE && <Button
             variant="outline"
             size="sm"
             className="border-zinc-700 text-zinc-300 hover:bg-zinc-800"
@@ -81,14 +89,14 @@ export function AdminView() {
             }}
           >
             <LogOut className="h-4 w-4 mr-1" /> Exit
-          </Button>
+          </Button>}
         </div>
       </header>
 
       {/* Tabs */}
       <div className="bg-zinc-900/60 border-b border-zinc-800 px-3 py-2 sticky top-[57px] z-20">
         <div className="max-w-5xl mx-auto flex gap-1.5 overflow-x-auto">
-          {tabs.map((t) => {
+          {(STATIC_MODE ? tabs.filter((t) => t.key === 'import') : tabs).map((t) => {
             const Icon = t.icon
             return (
               <button
@@ -108,7 +116,7 @@ export function AdminView() {
       <main className="flex-1 max-w-5xl w-full mx-auto px-4 py-5">
         {tab === 'overview' && <OverviewTab />}
         {tab === 'users' && <UsersTab />}
-        {tab === 'import' && <ImportTab />}
+        {tab === 'import' && (STATIC_MODE ? <LocalCatalogueImport /> : <ImportTab />)}
         {tab === 'promotions' && <PromotionsTab />}
         {tab === 'whatsnew' && <WhatsNewTab />}
         {tab === 'files' && <FilesTab />}
