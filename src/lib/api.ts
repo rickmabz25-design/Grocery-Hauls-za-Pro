@@ -5,7 +5,7 @@ import { useApp } from '@/lib/store'
 
 // Static hosting has no server API. User data is handled by the browser-local
 // adapter; only published catalogue snapshots are fetched from /data/*.json.
-export const STATIC_MODE = process.env.NEXT_PUBLIC_STATIC === '1'
+export const STATIC_MODE = true
 
 const LOCAL_ONLY = 'This action is not available in the local-only app yet.'
 
