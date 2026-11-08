@@ -138,7 +138,7 @@ async function compareList(state: AnyRecord, listId: string, storeIds: string[],
   const mostExpensive = ranked.length > 1 ? ranked[ranked.length - 1] : null
   storeResults.forEach((s) => { s.cheapest = s.storeId === cheapest?.storeId; s.mostExpensive = s.storeId === mostExpensive?.storeId })
 
-  let split: AnyRecord = null
+  let split: AnyRecord | null = null
   if (selected.length >= 2 && items.length) {
     let best: { a: AnyRecord; b: AnyRecord; total: number } | null = null
     for (let i = 0; i < selected.length; i++) for (let j = i + 1; j < selected.length; j++) {
@@ -198,7 +198,7 @@ async function compareList(state: AnyRecord, listId: string, storeIds: string[],
   }
 }
 
-export async function handleStaticApi(method: string, path: string, body?: AnyRecord, ctx?: StaticContext): Promise<any> {
+export async function handleStaticApi(method: string, path: string, body: AnyRecord = {}, ctx?: StaticContext): Promise<any> {
   const verb = method.toUpperCase()
   const pathname = cleanPath(path)
   const query = paramsOf(path)
@@ -254,7 +254,7 @@ export async function handleStaticApi(method: string, path: string, body?: AnyRe
   if (pathname === '/api/shop/sessions' && verb === 'POST') {
     const stores = await getStores()
     const store = stores.find((s) => s.id === body?.storeId)
-    if (!store) fail('Choose the store you are shopping at')
+    if (!store) return fail('Choose the store you are shopping at')
     const list = body?.listId ? state.lists.find((l: AnyRecord) => l.id === body.listId) : null
     const products = await getProducts(), promos = await getPromos(ctx)
     const listItems = list ? state.items.filter((i: AnyRecord) => i.listId === list.id) : []
