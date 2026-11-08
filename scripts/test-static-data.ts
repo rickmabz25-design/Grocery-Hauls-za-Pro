@@ -133,7 +133,7 @@ check('search "milk" finds products', milk.results.length > 0)
 const milkProd = products.find((p) => p.name.toLowerCase().includes('milk'))
 if (milkProd) {
   const hit = milk.results.find((r: { name: string }) => r.name === milkProd.name)
-  check('search result carries lowest price', hit && hit.price === Math.min(...Object.values(milkProd.storePrices)))
+  check('search result carries lowest price', Boolean(hit && hit.price === Math.min(...Object.values(milkProd.storePrices))))
 }
 const promoFirst = (await GET('/api/products?q=')) as { results: Array<{ inPromo: boolean }> }
 const firstPromoIdx = promoFirst.results.findIndex((r) => r.inPromo)
@@ -142,7 +142,7 @@ check(
   'promo products sort first',
   firstPromoIdx === -1 || firstNonPromoIdx === -1 || firstPromoIdx < firstNonPromoIdx
 )
-const cat = products[0].categoryId
+const cat = products[0].category.id
 const byCat = (await GET(`/api/products?categoryId=${cat}`)) as { results: Array<{ category: { id: string } }> }
 check('category filter works', byCat.results.every((r) => r.category.id === cat) && byCat.results.length > 0)
 
