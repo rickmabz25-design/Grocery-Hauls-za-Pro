@@ -1,6 +1,7 @@
 'use client'
 
-import { handleStaticApi } from '@/lib/static-data'
+import { handleStaticApi, setStaticUserId } from '@/lib/static-data'
+import { useApp } from '@/lib/store'
 
 // Static hosting has no server API. User data is handled by the browser-local
 // adapter; only published catalogue snapshots are fetched from /data/*.json.
@@ -63,6 +64,7 @@ export async function api<T = unknown>(
   const method = (rest.method || 'GET').toUpperCase()
 
   if (STATIC_MODE) {
+    setStaticUserId(useApp.getState().user?.id)
     let body = json
     if (body === undefined && typeof rest.body === 'string') {
       try { body = JSON.parse(rest.body) } catch { body = undefined }
