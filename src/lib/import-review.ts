@@ -83,7 +83,7 @@ export function normName(value: unknown): string {
 }
 
 export function pubKey(name: unknown, store: unknown): string {
-  return `${normName(name)}::${normName(store)}`
+  return `${normName(name)}::${normName(store).replace(/\\s/g, '')}`
 }
 
 export function autoMap(headers: string[]): ImportColumnMap {
