@@ -36,34 +36,16 @@ export function AdminView() {
 
   useEffect(() => {
     if (STATIC_MODE) {
-      // Wait for Firebase's persisted Google session to finish restoring.
-      // The app shell and this admin view can mount before onAuthStateChanged
-      // fires, so checking Zustand immediately can incorrectly deny the admin.
-      let active = true
-      let unsubscribe: (() => void) | undefined
-      const approve = (email: string | null | undefined) => {
-        const normalized = email?.trim().toLowerCase() ?? ''
-        setAdmin(normalized === ADMIN_EMAIL_PRIMARY.trim().toLowerCase()
-          ? { email: email!.trim() }
-          : null)
-        setChecking(false)
-      }
-
-      void import('@/firebase').then(({ getFirebaseAuth, onAuthStateChanged }) => {
-        if (!active) return
-        unsubscribe = onAuthStateChanged(getFirebaseAuth(), (fbUser) => {
-          if (!active) return
-          // Firebase is the source of truth in the static/local-only build.
-          approve(fbUser?.email ?? currentUser?.email)
-        })
-      }).catch(() => {
-        if (active) approve(currentUser?.email)
-      })
-
-      return () => {
-        active = false
-        unsubscribe?.()
-      }
+      // The profile's user is already populated from the verified Firebase
+      // sign-in before the admin button can be opened. Use that same session
+      // state here; a second Firebase listener can emit its initial null
+      // value during persistence restoration and incorrectly deny access.
+      const email = currentUser?.email?.trim() ?? ''
+      setAdmin(email.toLowerCase() === ADMIN_EMAIL_PRIMARY.trim().toLowerCase()
+        ? { email }
+        : null)
+      setChecking(false)
+      return
     }
 
     apiGet<{ admin: { email: string } | null }>('/api/admin/login')
