@@ -6,4 +6,4 @@
 // correct on any domain (Cloudflare Pages, Firebase, or a custom domain).
 export const APP_SHARE_URL = 'https://grocery-hauls-za.pages.dev'
 
-export const ADMIN_EMAIL_PRIMARY = 'rick@endintcap.online'
+export const ADMIN_EMAIL_PRIMARY = 'tsheporick4@gmail.com'
