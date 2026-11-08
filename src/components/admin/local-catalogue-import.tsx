@@ -153,7 +153,7 @@ export function LocalCatalogueImport() {
         const grouped: Array<{ words: OcrWord[]; y: number; x0: number; x1: number; text: string }> = []
         for (const word of [...usableWords].sort((a, b) => (a.bbox.y0 + a.bbox.y1) / 2 - (b.bbox.y0 + b.bbox.y1) / 2 || a.bbox.x0 - b.bbox.x0)) {
           const cy = (word.bbox.y0 + word.bbox.y1) / 2
-          let line = grouped.find(item => Math.abs(item.y - cy) <= Math.max(9, medianHeight * 0.7))
+          let line = grouped.find(item => Math.abs(item.y - cy) <= Math.max(9, medianHeight * 0.7) && word.bbox.x0 <= item.x1 + medianHeight * 8 && word.bbox.x1 >= item.x0 - medianHeight * 8)
           if (!line) {
             line = { words: [], y: cy, x0: word.bbox.x0, x1: word.bbox.x1, text: '' }
             grouped.push(line)
@@ -176,7 +176,7 @@ export function LocalCatalogueImport() {
           return found.map(price => ({ line, price }))
         }).filter(item => {
           const value = Number(item.price.replace(',', '.'))
-          return Number.isFinite(value) && value > 0 && value <= 9999
+          return Number.isFinite(value) && value >= 10 && value <= 9999
         })
         const productLines = grouped.filter(line => /[\p{L}]{3}/u.test(line.text) && line.text.replace(/[^\p{L}]/gu, '').length >= 4)
         const candidates = priceLines.map((item, index) => {
@@ -198,7 +198,6 @@ export function LocalCatalogueImport() {
             sourceLine: `${nearest.line.text}  →  ${item.line.text}`,
           }
         }).filter((row): row is NonNullable<typeof row> => row !== null)
-        setFlyerCandidates(candidates)
         setFlyerCandidates(candidates)
         setFlyerOcrStatus(`Recognised ${lines.length} text lines and ${usableWords.length} positioned words; ${candidates.length} nearby product/price suggestions found. Whole-number prices are included, but every match needs manual checking.`)
         if (!candidates.length) toast({ title: 'Text recognised, no safe product rows found', description: 'Use the recognised text below to check the flyer manually.', variant: 'destructive' })
