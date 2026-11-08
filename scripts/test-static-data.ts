@@ -37,7 +37,7 @@ const { handleStaticApi } = await import(path.join(ROOT, 'src/lib/static-data.ts
 
 // promos from the build snapshot (no Firestore in unit tests)
 const promosPayload = JSON.parse(readFileSync(path.join(ROOT, 'public/data/promos.json'), 'utf8'))
-const ctx = { mergedPromos: async () => promosPayload.promos }
+const ctx = { mergedPromos: async () => promosPayload.promos, userId: 'test-user', user: { id: 'test-user', email: 'test@example.com', name: 'Tester', role: 'user', whatsappNumber: null, whatsappOptIn: false } }
 
 // --- tiny test harness ----------------------------------------------------------
 let pass = 0
@@ -237,8 +237,27 @@ await DEL(`/api/wishlist/${w1.item.id}`)
 const wl3 = (await GET('/api/wishlist')) as { items: unknown[] }
 check('wishlist delete', wl3.items.length === 0)
 
-// =========================== 7. router passthrough ===========================
-console.log('7. Router boundaries')
+// =========================== 7. profile + Shop Mode ===========================
+console.log('7. Profile + Shop Mode')
+const profile = (await PATCH('/api/profile', { whatsappNumber: '082 123 4567', whatsappOptIn: true })) as { user: { whatsappNumber: string; whatsappOptIn: boolean } }
+check('profile saves normalized SA WhatsApp number', profile.user.whatsappNumber === '+27821234567' && profile.user.whatsappOptIn)
+
+const shopStart = (await POST('/api/shop/sessions', { storeId: stores[0].id, listId: created.list.id })) as { session: { id: string } }
+check('Shop Mode session starts from saved list', Boolean(shopStart.session?.id))
+const shopDetail = (await GET(`/api/shop/sessions/${shopStart.session.id}`)) as { items: Array<{ id: string; bought: boolean }>; summary: { itemsInBasket: number } }
+check('Shop Mode preloads saved list items', shopDetail.items.length === 2 && shopDetail.summary.itemsInBasket === 2)
+await PATCH(`/api/shop/sessions/${shopStart.session.id}/items`, { itemId: shopDetail.items[0].id, bought: true })
+const shopAfterBuy = (await GET(`/api/shop/sessions/${shopStart.session.id}`)) as { summary: { itemsBought: number } }
+check('Shop Mode marks items as bought', shopAfterBuy.summary.itemsBought === 1)
+const shopManual = (await POST(`/api/shop/sessions/${shopStart.session.id}/items`, { name: 'Water 1L', price: 9.99, source: 'manual' })) as { item: { id: string } }
+check('Shop Mode adds manual basket item', Boolean(shopManual.item?.id))
+await DEL(`/api/shop/sessions/${shopStart.session.id}/items?itemId=${shopManual.item.id}`)
+await PATCH(`/api/shop/sessions/${shopStart.session.id}`, { status: 'completed' })
+const shopHistory = (await GET('/api/shop/sessions')) as { sessions: Array<{ id: string; status: string }> }
+check('Shop Mode session history persists', shopHistory.sessions.some((s) => s.id === shopStart.session.id && s.status === 'completed'))
+
+// =========================== 8. router passthrough ===========================
+console.log('8. Router boundaries')
 const notifications = await GET('/api/notifications') as { notifications: unknown[]; unread: number }
 check('notifications return a local empty state', Array.isArray(notifications.notifications) && notifications.notifications.length === 0 && notifications.unread === 0)
 const notHandled = await handleStaticApi('GET', '/api/not-a-real-feature', undefined, ctx)
