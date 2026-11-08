@@ -64,12 +64,13 @@ export async function api<T = unknown>(
   const method = (rest.method || 'GET').toUpperCase()
 
   if (STATIC_MODE) {
-    setStaticUserId(useApp.getState().user?.id)
+    const currentUser = useApp.getState().user
+    setStaticUserId(currentUser?.id)
     let body = json
     if (body === undefined && typeof rest.body === 'string') {
       try { body = JSON.parse(rest.body) } catch { body = undefined }
     }
-    const localResult = await handleStaticApi(method, path, body as Record<string, any> | undefined)
+    const localResult = await handleStaticApi(method, path, body as Record<string, any> | undefined, { userId: currentUser?.id, user: currentUser })
     if (localResult !== null) return localResult as T
     if (method === 'GET') return staticGet<T>(path)
     throw new Error(LOCAL_ONLY)
