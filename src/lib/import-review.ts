@@ -86,6 +86,17 @@ export function pubKey(name: unknown, store: unknown): string {
   return `${normName(name)}::${normName(store).replace(/\s/g, '')}`
 }
 
+/**
+ * Detects a common flyer/OCR export shape: the whole flyer is stored as one
+ * long first-row cell and becomes a fake column heading in SheetJS.
+ * Such files must not be offered for normal column mapping.
+ */
+export function isLikelyUnstructuredFlyer(headers: string[], records: Array<Record<string, unknown>>): boolean {
+  if (headers.length !== 1 || records.length > 3) return false
+  const heading = headers[0]?.trim() ?? ''
+  return heading.length >= 80 && !/^(product|item|description|name|store|price)/i.test(heading)
+}
+
 export function autoMap(headers: string[]): ImportColumnMap {
   const normalized = headers.map((h) => ({ original: h, key: h.toLowerCase().replace(/[^a-z0-9]/g, '') }))
   const pick = (patterns: RegExp[]): string | undefined =>
