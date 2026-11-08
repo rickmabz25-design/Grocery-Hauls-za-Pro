@@ -122,7 +122,7 @@ export function LocalCatalogueImport() {
       if (!context) throw new Error('Your browser could not prepare the flyer image for text recognition.')
       context.drawImage(image, 0, 0)
       await new Promise<void>((resolve, reject) => canvas.toBlob(blob => blob ? resolve() : reject(new Error('Could not prepare flyer image.')), 'image/png'))
-      const w = window as Window & { Tesseract?: { createWorker: (lang: string, oem?: number) => Promise<{ recognize: (source: HTMLCanvasElement) => Promise<{ data: { text: string; lines?: Array<{ text: string }> } }>; terminate: () => Promise<void> }> } }
+      const w = window as Window & { Tesseract?: { createWorker: (lang: string, oem?: number) => Promise<{ recognize: (source: HTMLCanvasElement) => Promise<{ data: { text: string; lines?: Array<{ text: string }>; words?: Array<{ text: string; confidence?: number; bbox: { x0: number; y0: number; x1: number; y1: number } }> } }>; terminate: () => Promise<void> }> } }
       if (!w.Tesseract) {
         await new Promise<void>((resolve, reject) => {
           const existing = document.querySelector<HTMLScriptElement>('script[data-flyer-ocr="tesseract"]')
@@ -141,14 +141,66 @@ export function LocalCatalogueImport() {
         const result = await worker.recognize(canvas)
         const lines = (result.data.lines || result.data.text.split(/\r?\n/).map(text => ({ text }))).map(line => line.text.trim()).filter(Boolean)
         setFlyerOcrText(lines.join('\n'))
-        const pricePattern = /(?:R\s*)?\d{1,4}(?:[ ,]\d{3})*(?:[.,]\d{2})/gi
-        const candidates = lines.map((line, index) => {
-          const prices = line.match(pricePattern) || []
-          const name = line.replace(pricePattern, ' ').replace(/\b(?:special|save|was|now|each|per)\b/gi, ' ').replace(/\s+/g, ' ').replace(/^[^\p{L}\p{N}]+|[^\p{L}\p{N}]+$/gu, '').trim()
-          return { id: index + 1, name, normalPrice: prices.length > 1 ? (prices[0]?.replace(/R\s*/i, '') || '') : '', promoPrice: prices.length ? (prices[prices.length - 1]?.replace(/R\s*/i, '') || '') : '', sourceLine: line }
-        }).filter(row => row.promoPrice && row.name.length >= 3)
+
+        // Use Tesseract word coordinates rather than requiring product and price
+        // to appear on the same OCR line. Flyer layouts commonly put prices below
+        // product descriptions or in a separate nearby price panel.
+        type OcrWord = { text: string; confidence?: number; bbox: { x0: number; y0: number; x1: number; y1: number } }
+        const words = (result.data.words || []) as OcrWord[]
+        const usableWords = words.filter(word => word.text.trim() && (word.confidence == null || word.confidence >= 20))
+        const heights = usableWords.map(word => Math.max(1, word.bbox.y1 - word.bbox.y0)).sort((a, b) => a - b)
+        const medianHeight = heights.length ? heights[Math.floor(heights.length / 2)]! : 16
+        const grouped: Array<{ words: OcrWord[]; y: number; x0: number; x1: number; text: string }> = []
+        for (const word of [...usableWords].sort((a, b) => (a.bbox.y0 + a.bbox.y1) / 2 - (b.bbox.y0 + b.bbox.y1) / 2 || a.bbox.x0 - b.bbox.x0)) {
+          const cy = (word.bbox.y0 + word.bbox.y1) / 2
+          let line = grouped.find(item => Math.abs(item.y - cy) <= Math.max(9, medianHeight * 0.7))
+          if (!line) {
+            line = { words: [], y: cy, x0: word.bbox.x0, x1: word.bbox.x1, text: '' }
+            grouped.push(line)
+          }
+          line.words.push(word)
+          line.y = line.words.reduce((sum, item) => sum + (item.bbox.y0 + item.bbox.y1) / 2, 0) / line.words.length
+          line.x0 = Math.min(line.x0, word.bbox.x0)
+          line.x1 = Math.max(line.x1, word.bbox.x1)
+        }
+        grouped.forEach(line => {
+          line.words.sort((a, b) => a.bbox.x0 - b.bbox.x0)
+          line.text = line.words.map(word => word.text).join(' ').trim()
+        })
+        const pricePattern = /^(?:R\s*)?\d{1,4}(?:[.,]\d{2})?$/i
+        const priceLines = grouped.flatMap(line => {
+          const found = line.words.map(word => {
+            const cleaned = word.text.replace(/^[^\dRr]+|[^\d.,]+$/g, '').replace(/^R(?=\d)/i, 'R')
+            return pricePattern.test(cleaned) ? cleaned.replace(/^R\s*/i, '') : ''
+          }).filter(Boolean)
+          return found.map(price => ({ line, price }))
+        }).filter(item => {
+          const value = Number(item.price.replace(',', '.'))
+          return Number.isFinite(value) && value > 0 && value <= 9999
+        })
+        const productLines = grouped.filter(line => /[\p{L}]{3}/u.test(line.text) && line.text.replace(/[^\p{L}]/gu, '').length >= 4)
+        const candidates = priceLines.map((item, index) => {
+          const nearest = productLines
+            .filter(line => line.y <= item.line.y + medianHeight * 1.5)
+            .map(line => {
+              const overlap = Math.max(0, Math.min(line.x1, item.line.x1) - Math.max(line.x0, item.line.x0))
+              const width = Math.max(1, Math.min(line.x1 - line.x0, item.line.x1 - item.line.x0))
+              const horizontalPenalty = 1 - overlap / width
+              const verticalDistance = Math.abs(item.line.y - line.y)
+              return { line, score: verticalDistance + horizontalPenalty * medianHeight * 5 }
+            })
+            .sort((a, b) => a.score - b.score)[0]
+          if (!nearest || nearest.score > medianHeight * 14) return null
+          const name = nearest.line.text.replace(/\b(?:special|save|was|now|each|per|combo)\b/gi, ' ').replace(/\s+/g, ' ').trim()
+          if (name.length < 4) return null
+          return {
+            id: index + 1, name, normalPrice: '', promoPrice: item.price,
+            sourceLine: `${nearest.line.text}  →  ${item.line.text}`,
+          }
+        }).filter((row): row is NonNullable<typeof row> => row !== null)
         setFlyerCandidates(candidates)
-        setFlyerOcrStatus(`Recognised ${lines.length} text lines; ${candidates.length} possible product/price rows found. Check every row carefully.`)
+        setFlyerCandidates(candidates)
+        setFlyerOcrStatus(`Recognised ${lines.length} text lines and ${usableWords.length} positioned words; ${candidates.length} nearby product/price suggestions found. Whole-number prices are included, but every match needs manual checking.`)
         if (!candidates.length) toast({ title: 'Text recognised, no safe product rows found', description: 'Use the recognised text below to check the flyer manually.', variant: 'destructive' })
       } finally { await worker.terminate() }
     } catch (error) {
