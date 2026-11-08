@@ -146,9 +146,9 @@ export async function exportLocalCatalogueSnapshot() {
     jsonFile<{ promos: AnyRecord[] }>('/data/promos.json'),
   ])
   const overrides = readCatalogueOverrides()
-  const products = new Map(baseProducts.products.map((p) => [p.id, p]))
+  const products = new Map<string, AnyRecord>(baseProducts.products.map((p): [string, AnyRecord] => [p.id, p]))
   overrides.products.forEach((p) => products.set(p.id, p))
-  const promos = new Map(basePromos.promos.map((p) => [p.id, p]))
+  const promos = new Map<string, AnyRecord>(basePromos.promos.map((p): [string, AnyRecord] => [p.id, p]))
   overrides.promos.forEach((p) => promos.set(p.id, p))
   return { products: [...products.values()], promos: [...promos.values()], exportedAt: nowIso() }
 }
@@ -156,7 +156,7 @@ export async function exportLocalCatalogueSnapshot() {
 const getProducts = async () => {
   const base = (await jsonFile<{ products: AnyRecord[] }>('/data/products.json')).products
   const overrides = readCatalogueOverrides().products
-  const merged = new Map(base.map((p) => [p.id, p]))
+  const merged = new Map<string, AnyRecord>(base.map((p): [string, AnyRecord] => [p.id, p]))
   overrides.forEach((p) => merged.set(p.id, p))
   return [...merged.values()]
 }
