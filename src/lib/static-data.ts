@@ -7,7 +7,7 @@
  */
 
 type AnyRecord = Record<string, any>
-type StaticContext = { mergedPromos?: () => Promise<any[]>; userId?: string | null }
+type StaticContext = { mergedPromos?: () => Promise<any[]>; userId?: string | null; user?: AnyRecord | null }
 
 const STORAGE_PREFIX = 'grocery-hauls-static-v1'
 let activeUserId = 'anonymous'
@@ -28,7 +28,7 @@ const number = (v: unknown, fallback = 0) => {
 const cleanPath = (path: string) => path.split('?')[0].replace(/\/$/, '') || '/'
 const paramsOf = (path: string) => new URLSearchParams(path.split('?')[1] || '')
 const readState = (ctx?: StaticContext): AnyRecord => {
-  if (typeof window === 'undefined') return { lists: [], items: [], plans: [], wishlist: [] }
+  if (typeof window === 'undefined') return { lists: [], items: [], plans: [], wishlist: [], shopSessions: [], notifications: [], profile: null }
   try {
     const raw = window.localStorage.getItem(storageKey(ctx))
     if (!raw) return { lists: [], items: [], plans: [], wishlist: [] }
@@ -38,6 +38,9 @@ const readState = (ctx?: StaticContext): AnyRecord => {
       items: Array.isArray(parsed.items) ? parsed.items : [],
       plans: Array.isArray(parsed.plans) ? parsed.plans : [],
       wishlist: Array.isArray(parsed.wishlist) ? parsed.wishlist : [],
+      shopSessions: Array.isArray(parsed.shopSessions) ? parsed.shopSessions : [],
+      notifications: Array.isArray(parsed.notifications) ? parsed.notifications : [],
+      profile: parsed.profile || null,
     }
   } catch {
     return { lists: [], items: [], plans: [], wishlist: [] }
@@ -194,6 +197,135 @@ export async function handleStaticApi(method: string, path: string, body?: AnyRe
   const query = paramsOf(path)
   const state = readState(ctx)
   const save = () => writeState(state, ctx)
+
+
+  if (pathname === '/api/profile' && verb === 'PATCH') {
+    const current = state.profile || ctx?.user
+    if (!current) fail('Sign in to update your profile')
+    const profile = { ...current }
+    if (body?.whatsappNumber !== undefined) {
+      const raw = String(body.whatsappNumber || '').trim().replace(/[\\s\\-()]/g, '')
+      if (!raw) { profile.whatsappNumber = null; profile.whatsappOptIn = false }
+      else {
+        const local = raw.replace(/^\\+27/, '0')
+        if (!/^0[6-8]\\d{8}$/.test(local)) fail('Enter a valid South African mobile number, e.g. 082 123 4567 or +27 82 123 4567')
+        profile.whatsappNumber = '+27' + local.slice(1)
+        profile.whatsappOptIn = Boolean(body.whatsappOptIn)
+      }
+    } else if (body?.whatsappOptIn !== undefined) {
+      if (!profile.whatsappNumber) fail('Add your WhatsApp number first')
+      profile.whatsappOptIn = Boolean(body.whatsappOptIn)
+    }
+    if (typeof body?.name === 'string' && body.name.trim()) profile.name = body.name.trim().slice(0, 60)
+    state.profile = profile; save(); return { user: profile }
+  }
+
+  if (pathname === '/api/notifications') {
+    if (verb === 'GET') return { notifications: state.notifications, unread: state.notifications.filter((n: AnyRecord) => !n.read).length }
+    if (verb === 'PATCH') {
+      if (body?.id) {
+        const item = state.notifications.find((n: AnyRecord) => n.id === body.id)
+        if (item) item.read = true
+      } else state.notifications.forEach((n: AnyRecord) => { n.read = true })
+      save(); return { ok: true }
+    }
+    if (verb === 'DELETE') {
+      const notificationId = query.get('id')
+      state.notifications = state.notifications.filter((n: AnyRecord) => n.id !== notificationId)
+      save(); return { ok: true }
+    }
+  }
+
+  if (pathname === '/api/shop/sessions' && verb === 'GET') {
+    return { sessions: state.shopSessions.map((s: AnyRecord) => ({
+      id: s.id, storeName: s.store.name, storeColor: s.store.color, status: s.status,
+      startedAt: s.startedAt, endedAt: s.endedAt, itemCount: s.items.length,
+      boughtCount: s.items.filter((i: AnyRecord) => i.bought).length,
+      subtotal: round(s.items.reduce((n: number, i: AnyRecord) => n + i.price * i.quantity, 0)),
+    })) }
+  }
+  if (pathname === '/api/shop/sessions' && verb === 'POST') {
+    const stores = await getStores()
+    const store = stores.find((s) => s.id === body?.storeId)
+    if (!store) fail('Choose the store you are shopping at')
+    const list = body?.listId ? state.lists.find((l: AnyRecord) => l.id === body.listId) : null
+    const products = await getProducts(), promos = await getPromos(ctx)
+    const listItems = list ? state.items.filter((i: AnyRecord) => i.listId === list.id) : []
+    const session = { id: id(), status: 'active', startedAt: nowIso(), endedAt: null, storeId: store.id,
+      store, listId: list?.id ?? null, listName: list?.name ?? null, items: [] as AnyRecord[] }
+    session.items = listItems.map((item: AnyRecord) => {
+      const product = products.find((p) => p.id === item.productId)
+      const promo = promos.filter((p) => p.productId === item.productId && p.storeId === store.id &&
+        new Date(p.startDate) <= new Date() && new Date(p.endDate) >= new Date()).sort((a, b) => a.promoPrice - b.promoPrice)[0]
+      const price = promo?.promoPrice ?? product?.storePrices?.[store.id] ?? (item.manualStoreId === store.id ? item.manualPrice : 0) ?? 0
+      return { id: id(), productId: item.productId, name: product?.name || item.manualName || 'Item',
+        price: number(price), promoPrice: promo?.promoPrice ?? null, quantity: item.quantity,
+        bought: false, source: 'list' }
+    })
+    state.shopSessions.unshift(session); save()
+    return { session: { id: session.id, storeId: store.id, listId: session.listId } }
+  }
+
+  const shopMatch = pathname.match(/^\\/api\\/shop\\/sessions\\/([^/]+)(?:\\/(items))?$/)
+  if (shopMatch) {
+    const session = state.shopSessions.find((s: AnyRecord) => s.id === decodeURIComponent(shopMatch[1]))
+    if (!session) fail('Session not found')
+    const action = shopMatch[2]
+    if (!action && verb === 'GET') {
+      const total = session.items.reduce((n: number, i: AnyRecord) => n + i.price * i.quantity, 0)
+      const promoSavings = session.items.reduce((n: number, i: AnyRecord) => n + (i.promoPrice != null ? Math.max(0, i.price - i.promoPrice) * i.quantity : 0), 0)
+      const productsForShop = await getProducts()
+      const listItems = state.items.filter((i: AnyRecord) => i.listId === session.listId)
+      const boughtNames = new Set(session.items.filter((i: AnyRecord) => i.bought && i.source === 'list').map((i: AnyRecord) => i.name.toLowerCase()))
+      const listRemaining = session.listId ? listItems.filter((li: AnyRecord) => {
+        const p = productsForShop.find((p) => p.id === li.productId)
+        return !boughtNames.has((p?.name || li.manualName || '').toLowerCase())
+      }).length : null
+      return { session: { id: session.id, status: session.status, startedAt: session.startedAt, endedAt: session.endedAt,
+        store: session.store, listId: session.listId, listName: session.listName },
+        items: session.items, summary: {
+          itemsScanned: session.items.filter((i: AnyRecord) => i.source !== 'list').length,
+          itemsInBasket: session.items.length, itemsBought: session.items.filter((i: AnyRecord) => i.bought).length,
+          listTotal: session.listId ? listItems.length : null, listRemaining,
+          subtotal: round(total), promoSavings: round(promoSavings), estimatedTotal: round(total - promoSavings),
+        } }
+    }
+    if (!action && verb === 'PATCH') { session.status = body?.status === 'active' ? 'active' : 'completed'; session.endedAt = session.status === 'completed' ? nowIso() : null; save(); return { ok: true, status: session.status } }
+    if (!action && verb === 'DELETE') { state.shopSessions = state.shopSessions.filter((s: AnyRecord) => s.id !== session.id); save(); return { ok: true } }
+    if (action === 'items' && verb === 'POST') {
+      if (session.status !== 'active') fail('This shopping session has ended')
+      const products = await getProducts(), promos = await getPromos(ctx)
+      let product = body?.productId ? products.find((p) => p.id === body.productId) : null
+      if (body?.barcode && !product) product = products.find((p) => p.barcode === String(body.barcode)) || null
+      let name = String(body?.name || product?.name || '').trim()
+      if (!product && body?.barcode) fail('Barcode not recognised')
+      if (!name) fail('Enter the product name or scan a barcode')
+      const promo = product ? promos.filter((p) => p.productId === product.id && p.storeId === session.storeId &&
+        new Date(p.startDate) <= new Date() && new Date(p.endDate) >= new Date()).sort((a, b) => a.promoPrice - b.promoPrice)[0] : null
+      const shelf = body?.price == null ? (promo?.promoPrice ?? product?.storePrices?.[session.storeId]) : Number(body.price)
+      if (shelf == null || !Number.isFinite(Number(shelf)) || Number(shelf) < 0) fail('Enter the shelf price from the price tag')
+      const item = { id: id(), productId: product?.id ?? null, name: name.slice(0, 80), price: Number(shelf),
+        promoPrice: promo?.promoPrice ?? null, quantity: Math.max(1, Math.min(99, number(body?.quantity, 1))),
+        bought: false, source: body?.source ?? (product ? 'scan' : 'manual') }
+      session.items.push(item); save()
+      return { item, onPromo: item.promoPrice != null, message: item.promoPrice == null ? 'Not on promotion.' : undefined }
+    }
+    if (action === 'items' && verb === 'PATCH') {
+      const item = session.items.find((i: AnyRecord) => i.id === body?.itemId)
+      if (!item) fail('Item not found')
+      if (body.quantity != null) item.quantity = Math.max(1, Math.min(99, number(body.quantity, 1)))
+      if (body.bought != null) item.bought = Boolean(body.bought)
+      if (body.price != null && Number.isFinite(Number(body.price)) && Number(body.price) >= 0) item.price = Number(body.price)
+      if (body.promoPrice !== undefined) item.promoPrice = body.promoPrice
+      save(); return { item }
+    }
+    if (action === 'items' && verb === 'DELETE') {
+      const itemId = query.get('itemId')
+      if (!itemId || !session.items.some((i: AnyRecord) => i.id === itemId)) fail('Item not found')
+      session.items = session.items.filter((i: AnyRecord) => i.id !== itemId)
+      save(); return { ok: true }
+    }
+  }
 
   if (verb === 'GET' && pathname === '/api/stores') return { stores: await getStores() }
   if (verb === 'GET' && pathname === '/api/categories') return { categories: await getCategories() }
