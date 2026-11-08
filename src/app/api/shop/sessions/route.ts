@@ -58,8 +58,8 @@ export async function POST(req: NextRequest) {
           })
         : Promise.resolve([]),
     ])
-    const priceMap = new Map(prices.map((p) => [p.productId, p.price]))
-    const promoMap = new Map(promos.map((p) => [p.productId, p.promoPrice]))
+    const priceMap = new Map<string, number>(prices.map((p) => [p.productId, Number(p.price)] as const))
+    const promoMap = new Map<string, number>(promos.map((p) => [p.productId, Number(p.promoPrice)] as const))
 
     await db.shopSessionItem.createMany({
       data: listItems.map((i) => {
