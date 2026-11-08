@@ -1,8 +1,8 @@
 'use client'
 
-import { useMemo, useState } from 'react'
+import { useEffect, useState } from 'react'
 import * as XLSX from 'xlsx'
-import { autoMap, buildReviewRows, pubKey, rowHasError, reviewSummary, type ImportReviewRow } from '@/lib/import-review'
+import { autoMap, buildReviewRows, rowHasError, reviewSummary, type ImportReviewRow } from '@/lib/import-review'
 import { applyLocalCatalogueImport, exportLocalCatalogueSnapshot } from '@/lib/static-data'
 import { Button } from '@/components/ui/button'
 import { toast } from '@/hooks/use-toast'
@@ -39,7 +39,7 @@ export function LocalCatalogueImport() {
   const [busy, setBusy] = useState(false)
   const [summary, setSummary] = useState<Awaited<ReturnType<typeof applyLocalCatalogueImport>> | null>(null)
 
-  useMemo(() => {
+  useEffect(() => {
     fetch('/data/stores.json').then(r => r.json()).then(d => {
       const list = Array.isArray(d.stores) ? d.stores : []
       setStores(list)
@@ -47,7 +47,6 @@ export function LocalCatalogueImport() {
     }).catch(() => toast({ title: 'Could not load stores', description: 'The local store catalogue could not be read.', variant: 'destructive' }))
     fetch('/data/categories.json').then(r => r.json()).then(d => setCategories(Array.isArray(d.categories) ? d.categories : []))
       .catch(() => toast({ title: 'Could not load categories', variant: 'destructive' }))
-    return undefined
   }, [])
 
   const counts = reviewSummary(rows)
