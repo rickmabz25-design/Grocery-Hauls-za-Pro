@@ -140,7 +140,7 @@ export function ShopModeView() {
       const reader = await getBarcodeReader()
       readerRef.current = reader
       if (videoRef.current) {
-        await reader.decodeFromVideoDevice(undefined, videoRef.current, (result) => {
+        await reader.decodeFromVideoDevice(null, videoRef.current, (result) => {
           if (result) {
             const text = result.getText()
             if (text) handleScanResult(text)
