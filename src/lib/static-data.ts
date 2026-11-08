@@ -55,12 +55,118 @@ async function jsonFile<T>(path: string): Promise<T> {
   if (!response.ok) throw new Error(`Could not load catalogue data (${response.status})`)
   return response.json() as Promise<T>
 }
-const getProducts = async () => (await jsonFile<{ products: AnyRecord[] }>('/data/products.json')).products
+const CATALOGUE_OVERRIDE_KEY = 'grocery-hauls-catalogue-overrides-v1'
+type CatalogueOverrides = { products: AnyRecord[]; promos: AnyRecord[] }
+
+function readCatalogueOverrides(): CatalogueOverrides {
+  if (typeof window === 'undefined') return { products: [], promos: [] }
+  try {
+    const parsed = JSON.parse(window.localStorage.getItem(CATALOGUE_OVERRIDE_KEY) || '{}')
+    return {
+      products: Array.isArray(parsed.products) ? parsed.products : [],
+      promos: Array.isArray(parsed.promos) ? parsed.promos : [],
+    }
+  } catch {
+    return { products: [], promos: [] }
+  }
+}
+
+/** Apply reviewed import rows to this browser's shared catalogue overlay. */
+export async function applyLocalCatalogueImport(rows: Array<{
+  name: string; storeId: string; unit?: string; barcode?: string; brand?: string;
+  categoryId?: string; normalPrice: number | null; promoPrice: number | null;
+  startDate?: string | null; endDate?: string | null;
+}>) {
+  if (typeof window === 'undefined') throw new Error('Catalogue imports require a browser')
+  const [baseProducts, stores, categories] = await Promise.all([jsonFile<{ products: AnyRecord[] }>('/data/products.json'), getStores(), getCategories()])
+  const overrides = readCatalogueOverrides()
+  const products = [...overrides.products]
+  const promos = [...overrides.promos]
+  let productsCreated = 0, productsUpdated = 0, pricesUpserted = 0, promosCreated = 0
+  const makeId = () => `local_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 9)}`
+  for (const row of rows) {
+    const store = stores.find((s) => s.id === row.storeId)
+    if (!store) throw new Error(`Unknown store for ${row.name}`)
+    let product = products.find((p) => p.name.toLowerCase() === row.name.toLowerCase()) ||
+      baseProducts.products.find((p) => p.name.toLowerCase() === row.name.toLowerCase())
+    if (product && !products.some((p) => p.id === product.id)) {
+      product = { ...product, storePrices: { ...(product.storePrices || {}) } }
+      products.push(product)
+    }
+    if (!product) {
+      const category = categories.find((x) => x.id === row.categoryId) || categories[0]
+      product = {
+        id: makeId(), name: row.name, brand: row.brand || null, unit: row.unit || null,
+        barcode: row.barcode || null, categoryId: category.id,
+        category: { id: category.id, name: category.name, icon: category.icon || '🛒' },
+        storePrices: {},
+      }
+      products.push(product)
+      productsCreated++
+    } else {
+      productsUpdated++
+      if (row.unit) product.unit = row.unit
+      if (row.barcode) product.barcode = row.barcode
+      if (row.brand) product.brand = row.brand
+      if (row.categoryId) {
+        const category = categories.find((x) => x.id === row.categoryId)
+        if (category) { product.categoryId = category.id; product.category = { id: category.id, name: category.name, icon: category.icon || '🛒' } }
+      }
+    }
+    if (row.normalPrice != null) {
+      product.storePrices = { ...(product.storePrices || {}), [store.id]: row.normalPrice }
+      pricesUpserted++
+    }
+    if (row.promoPrice != null) {
+      if (row.normalPrice == null || !row.startDate || !row.endDate) throw new Error(`Promotion for ${row.name} needs normal price and valid start/end dates`)
+      const existing = promos.find((p) => p.productId === product.id && p.storeId === store.id && p.startDate?.slice(0, 10) === row.startDate && p.endDate?.slice(0, 10) === row.endDate)
+      const promo = {
+        id: existing?.id || makeId(), productId: product.id, name: product.name, unit: product.unit,
+        category: product.category, storeId: store.id, storeName: store.name, storeColor: store.color,
+        promoPrice: row.promoPrice, normalPrice: row.normalPrice,
+        discount: Math.max(0, Math.round((1 - row.promoPrice / row.normalPrice) * 100)),
+        saved: Math.round((row.normalPrice - row.promoPrice) * 100) / 100,
+        startDate: `${row.startDate}T00:00:00.000Z`, endDate: `${row.endDate}T23:59:59.999Z`,
+        createdAt: existing?.createdAt || nowIso(),
+      }
+      if (existing) Object.assign(existing, promo)
+      else { promos.push(promo); promosCreated++ }
+    }
+  }
+  window.localStorage.setItem(CATALOGUE_OVERRIDE_KEY, JSON.stringify({ products, promos }))
+  return { productsCreated, productsUpdated, pricesUpserted, promosCreated, rowsProcessed: rows.length }
+}
+
+/** Export a merged snapshot that can be reviewed and committed to public/data. */
+export async function exportLocalCatalogueSnapshot() {
+  const [baseProducts, basePromos] = await Promise.all([
+    jsonFile<{ products: AnyRecord[] }>('/data/products.json'),
+    jsonFile<{ promos: AnyRecord[] }>('/data/promos.json'),
+  ])
+  const overrides = readCatalogueOverrides()
+  const products = new Map(baseProducts.products.map((p) => [p.id, p]))
+  overrides.products.forEach((p) => products.set(p.id, p))
+  const promos = new Map(basePromos.promos.map((p) => [p.id, p]))
+  overrides.promos.forEach((p) => promos.set(p.id, p))
+  return { products: [...products.values()], promos: [...promos.values()], exportedAt: nowIso() }
+}
+
+const getProducts = async () => {
+  const base = (await jsonFile<{ products: AnyRecord[] }>('/data/products.json')).products
+  const overrides = readCatalogueOverrides().products
+  const merged = new Map(base.map((p) => [p.id, p]))
+  overrides.forEach((p) => merged.set(p.id, p))
+  return [...merged.values()]
+}
 const getStores = async () => (await jsonFile<{ stores: AnyRecord[] }>('/data/stores.json')).stores
 const getCategories = async () => (await jsonFile<{ categories: AnyRecord[] }>('/data/categories.json')).categories
 const getPromos = async (ctx?: StaticContext) => {
   if (ctx?.mergedPromos) return ctx.mergedPromos()
-  return (await jsonFile<{ promos: AnyRecord[] }>('/data/promos.json')).promos
+  const base = (await jsonFile<{ promos: AnyRecord[] }>('/data/promos.json')).promos
+  const overrides = readCatalogueOverrides().promos
+  const merged = new Map(base.map((p) => [p.id, p]))
+  overrides.forEach((p) => merged.set(p.id, p))
+  return [...merged.values()]
 }
 const fail = (message: string): never => { throw new Error(message) }
 const requireList = (state: AnyRecord, listId: string) => {
