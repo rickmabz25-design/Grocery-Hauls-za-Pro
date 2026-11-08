@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import * as XLSX from 'xlsx'
-import { autoMap, buildReviewRows, rowHasError, reviewSummary, type ImportReviewRow } from '@/lib/import-review'
+import { autoMap, buildReviewRows, rowHasError, reviewSummary, isLikelyUnstructuredFlyer, type ImportReviewRow } from '@/lib/import-review'
 import { applyLocalCatalogueImport, exportLocalCatalogueSnapshot } from '@/lib/static-data'
 import { Button } from '@/components/ui/button'
 import { toast } from '@/hooks/use-toast'
@@ -34,6 +34,7 @@ export function LocalCatalogueImport() {
   const [categories, setCategories] = useState<Category[]>([])
   const [defaultStore, setDefaultStore] = useState('')
   const [file, setFile] = useState<ParsedFile | null>(null)
+  const [fileNotice, setFileNotice] = useState('')
   const [mapping, setMapping] = useState<Record<string, string>>({})
   const [rows, setRows] = useState<ImportReviewRow[]>([])
   const [busy, setBusy] = useState(false)
@@ -55,7 +56,7 @@ export function LocalCatalogueImport() {
   const canImport = Boolean(file && rows.length && approved.length && !hasPromoWithoutDates && !busy)
 
   const parseFile = async (selected: File) => {
-    setFile(null); setRows([]); setSummary(null)
+    setFile(null); setRows([]); setSummary(null); setFileNotice('')
     try {
       const bytes = await selected.arrayBuffer()
       const workbook = XLSX.read(bytes, { type: 'array', cellDates: false })
@@ -65,6 +66,10 @@ export function LocalCatalogueImport() {
       if (!records.length) throw new Error('No data rows were found in the first worksheet.')
       const headers = Object.keys(records[0])
       if (!headers.length) throw new Error('No column headings were found.')
+      if (isLikelyUnstructuredFlyer(headers, records)) {
+        setFileNotice('This file appears to contain a whole flyer as one block of OCR text, not a product table. The importer cannot safely tell which price belongs to which product, so it has stopped the import rather than create incorrect catalogue prices. Open the original Boxer catalogue, then use a properly structured spreadsheet with one product per row. Flyer image/PDF OCR extraction is not yet implemented.')
+        return
+      }
       const guessed = autoMap(headers) as Record<string, string | undefined>
       const extra = (key: string, patterns: RegExp[]) => headers.find(h => patterns.some(p => p.test(h.toLowerCase().replace(/[^a-z0-9]/g, ''))))
       const auto: Record<string, string> = {}
@@ -164,6 +169,11 @@ export function LocalCatalogueImport() {
         <input type="file" accept=".csv,.xlsx,.xls" className="hidden" onChange={e => { const f = e.target.files?.[0]; if (f) void parseFile(f); e.currentTarget.value = '' }} />
       </label>
       {file && <p className="text-xs text-sky-300">{file.name} · {file.records.length} rows</p>}
+      {fileNotice && <div role="alert" className="rounded-lg border border-amber-700/70 bg-amber-950/30 p-3 text-xs leading-relaxed text-amber-200">
+        <b className="block mb-1">Flyer format detected — import stopped safely</b>
+        {fileNotice}
+        <a className="mt-2 inline-block underline text-sky-300" href="https://online.flippingbook.com/view/298605390/" target="_blank" rel="noreferrer">Open the original Boxer GP October flyer</a>
+      </div>}
     </section>
 
     {file && <section className="rounded-2xl border border-zinc-800 bg-zinc-900 p-5 space-y-3">
