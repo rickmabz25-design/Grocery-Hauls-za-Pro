@@ -33,7 +33,7 @@ const realFetch = globalThis.fetch
 }
 
 // --- import after shims --------------------------------------------------------
-const { handleStaticApi } = await import(path.join(ROOT, 'src/lib/static-data.ts').replace(/\.ts$/, '') + '')
+const { handleStaticApi, applyLocalCatalogueImport, exportLocalCatalogueSnapshot } = await import(path.join(ROOT, 'src/lib/static-data.ts').replace(/\.ts$/, '') + '')
 
 // promos from the build snapshot (no Firestore in unit tests)
 const promosPayload = JSON.parse(readFileSync(path.join(ROOT, 'public/data/promos.json'), 'utf8'))
@@ -268,6 +268,34 @@ check('missing list 404s with message', (del404 as Error).message === 'List not 
 // persistence: data survives across "sessions" (module re-uses localStorage)
 const persisted = (await GET('/api/lists')) as { lists: unknown[] }
 check('lists persist in localStorage', persisted.lists.length === 2)
+
+// ====================== 9. browser-local catalogue import ======================
+console.log('9. Browser-local catalogue import')
+const localStore = stores[0]
+const importedName = 'V15 Local Import Test Product'
+const importDateStart = '2026-11-01'
+const importDateEnd = '2026-12-01'
+const firstImport = await applyLocalCatalogueImport([{
+  name: importedName, storeId: localStore.id, unit: '1kg',
+  normalPrice: 20, promoPrice: 15, startDate: importDateStart, endDate: importDateEnd,
+}])
+check('new product and promotion are saved locally', firstImport.productsCreated === 1 && firstImport.promosCreated === 1)
+const GETLOCAL = (p: string) => handleStaticApi('GET', p, undefined, { userId: 'local-import-test' })
+const importedSearch = await GETLOCAL('/api/products?q=V15%20Local%20Import%20Test%20Product') as { results: Array<{ id: string; price: number }> }
+check('local product search sees imported product and price', importedSearch.results[0]?.price === 20)
+const importedPromos = await GETLOCAL('/api/promos') as { promos: Array<{ productId: string; promoPrice: number }> }
+check('promotions endpoint sees imported promotion', importedPromos.promos.some(p => p.productId === importedSearch.results[0]?.id && p.promoPrice === 15))
+const secondImport = await applyLocalCatalogueImport([{
+  name: importedName, storeId: localStore.id, unit: '1kg',
+  normalPrice: 18, promoPrice: 12, startDate: importDateStart, endDate: importDateEnd,
+}])
+check('re-import updates existing product and promotion instead of duplicating', secondImport.productsUpdated === 1 && secondImport.promosCreated === 0)
+const updatedSearch = await GETLOCAL('/api/products?q=V15%20Local%20Import%20Test%20Product') as { results: Array<{ price: number }> }
+const updatedPromos = await GETLOCAL('/api/promos') as { promos: Array<{ productId: string; promoPrice: number }> }
+check('re-imported prices are reflected by local catalogue reads', updatedSearch.results[0]?.price === 18 && updatedPromos.promos.some(p => p.productId === importedSearch.results[0]?.id && p.promoPrice === 12))
+const exported = await exportLocalCatalogueSnapshot()
+check('catalogue export includes locally imported product and promotion', exported.products.some(p => p.name === importedName) && exported.promos.some(p => p.productId === importedSearch.results[0]?.id && p.promoPrice === 12))
+localStorageShim.removeItem('grocery-hauls-catalogue-overrides-v1')
 
 console.log(`\n========== RESULTS: ${pass} passed, ${fail} failed ==========`)
 if (failures.length) {
