@@ -204,11 +204,11 @@ export async function handleStaticApi(method: string, path: string, body?: AnyRe
     if (!current) fail('Sign in to update your profile')
     const profile = { ...current }
     if (body?.whatsappNumber !== undefined) {
-      const raw = String(body.whatsappNumber || '').trim().replace(/[\\s\\-()]/g, '')
+      const raw = String(body.whatsappNumber || '').trim().replace(/[\s\-()]/g, '')
       if (!raw) { profile.whatsappNumber = null; profile.whatsappOptIn = false }
       else {
-        const local = raw.replace(/^\\+27/, '0')
-        if (!/^0[6-8]\\d{8}$/.test(local)) fail('Enter a valid South African mobile number, e.g. 082 123 4567 or +27 82 123 4567')
+        const local = raw.replace(/^\+27/, '0')
+        if (!/^0[6-8]\d{8}$/.test(local)) fail('Enter a valid South African mobile number, e.g. 082 123 4567 or +27 82 123 4567')
         profile.whatsappNumber = '+27' + local.slice(1)
         profile.whatsappOptIn = Boolean(body.whatsappOptIn)
       }
@@ -266,7 +266,7 @@ export async function handleStaticApi(method: string, path: string, body?: AnyRe
     return { session: { id: session.id, storeId: store.id, listId: session.listId } }
   }
 
-  const shopMatch = pathname.match(/^\\/api\\/shop\\/sessions\\/([^/]+)(?:\\/(items))?$/)
+  const shopMatch = pathname.match(/^\/api\/shop\/sessions\/([^/]+)(?:\/(items))?$/)
   if (shopMatch) {
     const session = state.shopSessions.find((s: AnyRecord) => s.id === decodeURIComponent(shopMatch[1]))
     if (!session) fail('Session not found')
