@@ -184,7 +184,7 @@ export function LocalCatalogueImport() {
           onClick={() => {
             try {
               const parsed = new URL(flyerUrl.trim())
-              if (parsed.protocol !== 'https:' || !/\\.(jpe?g|png|webp)(?:$|[?#])/i.test(parsed.href)) {
+              if (parsed.protocol !== 'https:' || !/\.(jpe?g|png|webp)(?:$|[?#])/i.test(parsed.href)) {
                 throw new Error('Use a secure HTTPS link ending in JPG, PNG or WEBP.')
               }
               setFlyerPreviewUrl(parsed.href)
