@@ -142,15 +142,21 @@ async function compareList(state: AnyRecord, listId: string, storeIds: string[],
     let best: { a: AnyRecord; b: AnyRecord; total: number } | null = null
     for (let i = 0; i < selected.length; i++) for (let j = i + 1; j < selected.length; j++) {
       const a = selected[i], b = selected[j]
-      let total = 0
+      let total = 0, valid = true
       for (const item of items) {
         const qty = Math.max(1, number(item.quantity, 1))
         if (item.productId) {
           const pa = effective(item.productId, a.id), pb = effective(item.productId, b.id)
-          if (pa || pb) total += Math.min(pa ? pa.price * qty : Infinity, pb ? pb.price * qty : Infinity)
-        } else if (item.manualStoreId === a.id || item.manualStoreId === b.id) total += number(item.manualPrice) * qty
+          if (!pa && !pb) { valid = false; break }
+          total += Math.min(pa ? pa.price * qty : Infinity, pb ? pb.price * qty : Infinity)
+        } else if (item.manualStoreId === a.id || item.manualStoreId === b.id) {
+          total += number(item.manualPrice) * qty
+        } else {
+          valid = false
+          break
+        }
       }
-      if (!best || total < best.total) best = { a, b, total }
+      if (valid && (!best || total < best.total)) best = { a, b, total }
     }
     if (best) {
       const assignments = [[], []] as AnyRecord[][]
