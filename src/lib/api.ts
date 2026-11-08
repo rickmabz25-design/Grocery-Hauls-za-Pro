@@ -1,121 +1,79 @@
 'use client'
 
-// Small client-side fetch wrapper with consistent error handling.
-//
-// STATIC (Spark) mode — NEXT_PUBLIC_STATIC=1 at build time:
-//   The Firebase Spark (free) plan hosts static files only — no server APIs.
-//   In this mode the wrapper transparently serves the catalog from
-//   /data/*.json (generated from SQLite at build time by
-//   scripts/gen-catalog-json.mjs), returns graceful empty states for
-//   user-data reads, and throws a friendly error for any write so views
-//   surface "coming in Spark Pass 2" instead of a 404.
-//   In normal (dev / SSR / Blaze) mode behaviour is unchanged.
+import { handleStaticApi } from '@/lib/static-data'
 
+// Static hosting has no server API. User data is handled by the browser-local
+// adapter; only published catalogue snapshots are fetched from /data/*.json.
 export const STATIC_MODE = process.env.NEXT_PUBLIC_STATIC === '1'
 
-const PASS2 = 'Data sync is coming in Spark Pass 2 (Firestore on the free plan). This action needs the full (Blaze) build — the local preview still supports it.'
+const LOCAL_ONLY = 'This action is not available in the local-only app yet.'
 
 type PromoCard = {
-  id: string
-  productId: string
-  name: string
-  unit: string | null
-  category: { id: string; name: string; icon: string }
-  storeId: string
-  storeName: string
-  storeColor: string
-  promoPrice: number
-  normalPrice: number
-  discount: number
-  saved: number
-  startDate: string
-  endDate: string
-  createdAt: string
+  id: string; productId: string; name: string; unit: string | null
+  category: { id: string; name: string; icon: string }; storeId: string
+  storeName: string; storeColor: string; promoPrice: number; normalPrice: number
+  discount: number; saved: number; startDate: string; endDate: string; createdAt: string
 }
 
-// --- static GET rewrites ----------------------------------------------------
-// Empty states mirror the real API response shapes so views render cleanly.
 const STATIC_EMPTY: Record<string, unknown> = {
-  '/api/lists': { lists: [] },
-  '/api/wishlist': { items: [] },
   '/api/notifications': { notifications: [], unread: 0 },
   '/api/auth/session': { user: null },
 }
-
-// Catalog GETs -> build-time JSON files
 const STATIC_FILES: Record<string, string> = {
   '/api/stores': '/data/stores.json',
   '/api/categories': '/data/categories.json',
   '/api/whats-new': '/data/whats-new.json',
 }
-
 let promosCache: PromoCard[] | null = null
 
 async function staticGet<T>(path: string): Promise<T> {
   const [pathname, query] = path.split('?')
   const sp = new URLSearchParams(query || '')
-
   if (STATIC_EMPTY[pathname] !== undefined) return STATIC_EMPTY[pathname] as T
-
   if (pathname === '/api/promos') {
     if (!promosCache) {
       const res = await fetch('/data/promos.json')
+      if (!res.ok) throw new Error(`Failed to load /data/promos.json (${res.status})`)
       promosCache = ((await res.json()) as { promos: PromoCard[] }).promos
     }
-    // Runtime freshness guard: /data/promos.json is generated at build time,
-    // so if the site hasn't been rebuilt recently the snapshot can contain
-    // promos that have since expired (or start in the future). The SSR API
-    // filters these via SQL `where` clauses — mirror that here so users never
-    // see stale/expired specials no matter how old the deploy is.
     const now = new Date()
-    promosCache = promosCache.filter(
-      (c) => new Date(c.startDate) <= now && new Date(c.endDate) >= now
-    )
-    const storeId = sp.get('store') || ''
-    const categoryId = sp.get('category') || ''
-    const sort = sp.get('sort') || 'discount'
-    let cards = promosCache
-    if (storeId) cards = cards.filter((c) => c.storeId === storeId)
-    if (categoryId) cards = cards.filter((c) => c.category.id === categoryId)
-    cards = [...cards]
-    switch (sort) {
-      case 'price':
-        cards.sort((a, b) => a.promoPrice - b.promoPrice)
-        break
-      case 'ending':
-        cards.sort((a, b) => new Date(a.endDate).getTime() - new Date(b.endDate).getTime())
-        break
-      case 'new':
-        cards.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
-        break
-      default:
-        cards.sort((a, b) => b.discount - a.discount || a.promoPrice - b.promoPrice)
-    }
-    return { promos: cards } as T
+    const active = promosCache.filter((p) => new Date(p.startDate) <= now && new Date(p.endDate) >= now)
+    const store = sp.get('store') || '', category = sp.get('category') || '', sort = sp.get('sort') || 'discount'
+    let rows = active.filter((p) => (!store || p.storeId === store) && (!category || p.category.id === category))
+    rows = [...rows]
+    if (sort === 'price') rows.sort((a, b) => a.promoPrice - b.promoPrice)
+    else if (sort === 'ending') rows.sort((a, b) => +new Date(a.endDate) - +new Date(b.endDate))
+    else if (sort === 'new') rows.sort((a, b) => +new Date(b.createdAt) - +new Date(a.createdAt))
+    else rows.sort((a, b) => b.discount - a.discount || a.promoPrice - b.promoPrice)
+    return { promos: rows } as T
   }
-
   if (STATIC_FILES[pathname]) {
     const res = await fetch(STATIC_FILES[pathname])
     if (!res.ok) throw new Error(`Failed to load ${STATIC_FILES[pathname]} (${res.status})`)
-    return (await res.json()) as T
+    return await res.json() as T
   }
-
-  throw new Error(`This endpoint is not available on the Spark static build: ${pathname}`)
+  throw new Error(`This local-only feature is not available yet: ${pathname}`)
 }
 
-// --- core wrapper ------------------------------------------------------------
 export async function api<T = unknown>(
   path: string,
-  options: RequestInit & { json?: unknown } = {}
+  options: RequestInit & { json?: unknown } = {},
 ): Promise<T> {
   const { json, ...rest } = options
   const method = (rest.method || 'GET').toUpperCase()
 
   if (STATIC_MODE) {
-    if (method !== 'GET') throw new Error(PASS2)
-    return staticGet<T>(path)
+    let body = json
+    if (body === undefined && typeof rest.body === 'string') {
+      try { body = JSON.parse(rest.body) } catch { body = undefined }
+    }
+    const localResult = await handleStaticApi(method, path, body as Record<string, any> | undefined)
+    if (localResult !== null) return localResult as T
+    if (method === 'GET') return staticGet<T>(path)
+    throw new Error(LOCAL_ONLY)
   }
 
+  // Non-static development/server builds retain their existing server API path.
   const res = await fetch(path, {
     ...rest,
     headers: { 'Content-Type': 'application/json', ...(rest.headers || {}) },
@@ -123,9 +81,7 @@ export async function api<T = unknown>(
     credentials: 'same-origin',
   })
   const data = await res.json().catch(() => ({}))
-  if (!res.ok) {
-    throw new Error((data as { error?: string }).error || `Request failed (${res.status})`)
-  }
+  if (!res.ok) throw new Error((data as { error?: string }).error || `Request failed (${res.status})`)
   return data as T
 }
 
@@ -135,7 +91,10 @@ export const apiPatch = <T = unknown,>(path: string, json?: unknown) => api<T>(p
 export const apiDelete = <T = unknown,>(path: string) => api<T>(path, { method: 'DELETE' })
 
 export async function apiUpload<T = unknown,>(path: string, formData: FormData): Promise<T> {
-  if (STATIC_MODE) throw new Error(PASS2)
+  if (STATIC_MODE) {
+    // Imports must be parsed and reviewed in the browser; never POST files to a server.
+    throw new Error('File imports are being moved to browser-local review. No upload was sent.')
+  }
   const res = await fetch(path, { method: 'POST', body: formData, credentials: 'same-origin' })
   const data = await res.json().catch(() => ({}))
   if (!res.ok) throw new Error((data as { error?: string }).error || `Upload failed (${res.status})`)
