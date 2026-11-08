@@ -10,7 +10,8 @@ import { Download, FileSpreadsheet, Upload } from 'lucide-react'
 
 type Store = { id: string; name: string; color?: string }
 type Category = { id: string; name: string; icon?: string }
-type ParsedFile = { headers: string[]; records: Record<string, unknown>[]; name: string }
+type ParsedFile = { headers: string[]; records: Record<string, unknown>[]; name: string; defaultStart?: string; defaultEnd?: string }
+type FlyerCandidate = { id: number; name: string; normalPrice: string; promoPrice: string; sourceLine: string }
 
 const fields = [
   ['name', 'Product name *'], ['store', 'Store (optional if default selected)'],
@@ -38,6 +39,12 @@ export function LocalCatalogueImport() {
   const [flyerUrl, setFlyerUrl] = useState('')
   const [flyerPreviewUrl, setFlyerPreviewUrl] = useState('')
   const [flyerImageError, setFlyerImageError] = useState(false)
+  const [flyerStartDate, setFlyerStartDate] = useState('')
+  const [flyerEndDate, setFlyerEndDate] = useState('')
+  const [flyerOcrBusy, setFlyerOcrBusy] = useState(false)
+  const [flyerOcrStatus, setFlyerOcrStatus] = useState('')
+  const [flyerOcrText, setFlyerOcrText] = useState('')
+  const [flyerCandidates, setFlyerCandidates] = useState<FlyerCandidate[]>([])
   const [mapping, setMapping] = useState<Record<string, string>>({})
   const [rows, setRows] = useState<ImportReviewRow[]>([])
   const [busy, setBusy] = useState(false)
@@ -93,6 +100,75 @@ export function LocalCatalogueImport() {
     }
   }
 
+  const runFlyerOcr = async () => {
+    if (!flyerPreviewUrl) return
+    if (!flyerStartDate || !flyerEndDate) {
+      toast({ title: 'Flyer dates required', description: 'Enter the promotion start and end dates before extracting products.', variant: 'destructive' })
+      return
+    }
+    if (flyerStartDate > flyerEndDate) {
+      toast({ title: 'Check flyer dates', description: 'The end date must be on or after the start date.', variant: 'destructive' })
+      return
+    }
+    setFlyerOcrBusy(true); setFlyerOcrStatus('Loading browser OCR…'); setFlyerCandidates([]); setFlyerOcrText('')
+    try {
+      const image = new Image()
+      image.crossOrigin = 'anonymous'
+      image.src = flyerPreviewUrl
+      await new Promise<void>((resolve, reject) => { image.onload = () => resolve(); image.onerror = () => reject(new Error('The image host blocked the image from being read. Try downloading the flyer page and choosing it as a local image file.')) })
+      const canvas = document.createElement('canvas')
+      canvas.width = image.naturalWidth; canvas.height = image.naturalHeight
+      const context = canvas.getContext('2d')
+      if (!context) throw new Error('Your browser could not prepare the flyer image for text recognition.')
+      context.drawImage(image, 0, 0)
+      await new Promise<void>((resolve, reject) => canvas.toBlob(blob => blob ? resolve() : reject(new Error('Could not prepare flyer image.')), 'image/png'))
+      const w = window as Window & { Tesseract?: { createWorker: (lang: string, oem?: number) => Promise<{ recognize: (source: HTMLCanvasElement) => Promise<{ data: { text: string; lines?: Array<{ text: string }> } }>; terminate: () => Promise<void> }> } }
+      if (!w.Tesseract) {
+        await new Promise<void>((resolve, reject) => {
+          const existing = document.querySelector<HTMLScriptElement>('script[data-flyer-ocr="tesseract"]')
+          if (existing) { existing.addEventListener('load', () => resolve(), { once: true }); existing.addEventListener('error', () => reject(new Error('Could not load the browser OCR library.')), { once: true }); return }
+          const script = document.createElement('script')
+          script.src = 'https://cdn.jsdelivr.net/npm/tesseract.js@6/dist/tesseract.min.js'
+          script.async = true; script.dataset.flyerOcr = 'tesseract'
+          script.onload = () => resolve(); script.onerror = () => reject(new Error('Could not load the browser OCR library. Check your internet connection and try again.'))
+          document.head.appendChild(script)
+        })
+      }
+      if (!w.Tesseract) throw new Error('Browser OCR library did not initialise.')
+      setFlyerOcrStatus('Reading flyer text locally in this browser…')
+      const worker = await w.Tesseract.createWorker('eng', 1)
+      try {
+        const result = await worker.recognize(canvas)
+        const lines = (result.data.lines || result.data.text.split(/\\r?\\n/).map(text => ({ text }))).map(line => line.text.trim()).filter(Boolean)
+        setFlyerOcrText(lines.join('\\n'))
+        const pricePattern = /(?:R\\s*)?\\d{1,4}(?:[ ,]\\d{3})*(?:[.,]\\d{2})/gi
+        const candidates = lines.map((line, index) => {
+          const prices = line.match(pricePattern) || []
+          const name = line.replace(pricePattern, ' ').replace(/\\b(?:special|save|was|now|each|per)\\b/gi, ' ').replace(/\\s+/g, ' ').replace(/^[^\\p{L}\\p{N}]+|[^\\p{L}\\p{N}]+$/gu, '').trim()
+          return { id: index + 1, name, normalPrice: prices.length > 1 ? prices[0].replace(/R\\s*/i, '') : '', promoPrice: prices.length ? prices[prices.length - 1].replace(/R\\s*/i, '') : '', sourceLine: line }
+        }).filter(row => row.promoPrice && row.name.length >= 3)
+        setFlyerCandidates(candidates)
+        setFlyerOcrStatus(`Recognised ${lines.length} text lines; ${candidates.length} possible product/price rows found. Check every row carefully.`)
+        if (!candidates.length) toast({ title: 'Text recognised, no safe product rows found', description: 'Use the recognised text below to check the flyer manually.', variant: 'destructive' })
+      } finally { await worker.terminate() }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Flyer text recognition failed.'
+      setFlyerOcrStatus(message)
+      toast({ title: 'Could not read flyer', description: message, variant: 'destructive' })
+    } finally { setFlyerOcrBusy(false) }
+  }
+
+  const useFlyerCandidates = () => {
+    const usable = flyerCandidates.filter(row => row.name.trim() && (row.normalPrice.trim() || row.promoPrice.trim()))
+    if (!usable.length) { toast({ title: 'No product rows ready', description: 'Check the OCR results and enter product names and prices first.', variant: 'destructive' }); return }
+    const headers = ['Product name', 'Normal price', 'Promo price']
+    const records = usable.map(row => ({ 'Product name': row.name.trim(), 'Normal price': row.normalPrice.trim(), 'Promo price': row.promoPrice.trim() }))
+    setFile({ headers, records, name: 'Flyer OCR review', defaultStart: flyerStartDate, defaultEnd: flyerEndDate })
+    setMapping({ name: 'Product name', normalPrice: 'Normal price', promoPrice: 'Promo price' })
+    setRows([]); setSummary(null)
+    toast({ title: 'Flyer rows ready for mapping', description: `${usable.length} possible rows added. Review and correct them before saving.` })
+  }
+
   const review = () => {
     if (!file) return
     const coreMap = {
@@ -101,7 +177,7 @@ export function LocalCatalogueImport() {
       startDate: mapping.startDate, endDate: mapping.endDate,
     }
     const storeName = stores.find(s => s.id === defaultStore)?.name
-    const built = buildReviewRows(file.records, coreMap, { defaultStoreName: storeName })
+    const built = buildReviewRows(file.records, coreMap, { defaultStoreName: storeName, defaultStart: file.defaultStart, defaultEnd: file.defaultEnd })
     const checked = built.map(row => {
       const issues = [...row.issues]
       if (!row.storeName || !stores.some(s => s.name.toLowerCase() === row.storeName.toLowerCase())) {
@@ -198,8 +274,31 @@ export function LocalCatalogueImport() {
           className="border-zinc-600 text-zinc-200"
         >Preview flyer page</Button>
         {flyerImageError && <p role="alert" className="text-xs text-amber-300">The link could not be loaded. Check that it is a direct HTTPS image link.</p>}
-        {flyerPreviewUrl && <div className="space-y-2">
-          <p className="text-xs text-sky-300">Flyer page preview — this does not import prices yet.</p>
+        {flyerPreviewUrl && <div className="space-y-3">
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+            <label className="text-[10px] font-bold uppercase text-zinc-400">Promotion valid from
+              <input type="date" value={flyerStartDate} onChange={e => setFlyerStartDate(e.target.value)} className="mt-1 w-full rounded-lg border border-zinc-700 bg-zinc-900 p-2 text-xs text-white" />
+            </label>
+            <label className="text-[10px] font-bold uppercase text-zinc-400">Promotion valid until
+              <input type="date" value={flyerEndDate} onChange={e => setFlyerEndDate(e.target.value)} className="mt-1 w-full rounded-lg border border-zinc-700 bg-zinc-900 p-2 text-xs text-white" />
+            </label>
+          </div>
+          <Button type="button" onClick={runFlyerOcr} disabled={flyerOcrBusy || !flyerStartDate || !flyerEndDate} className="bg-sky-600 hover:bg-sky-700">{flyerOcrBusy ? 'Reading flyer…' : 'Read flyer text in browser'}</Button>
+          {flyerOcrStatus && <p role="status" className="text-xs text-sky-300">{flyerOcrStatus}</p>}
+          {flyerCandidates.length > 0 && <div className="space-y-2 rounded-lg border border-zinc-700 p-3">
+            <p className="text-xs font-semibold text-white">Check the OCR suggestions — these may contain mistakes</p>
+            <div className="max-h-72 space-y-2 overflow-auto">
+              {flyerCandidates.map(row => <div key={row.id} className="grid grid-cols-1 gap-1 rounded-md bg-zinc-800 p-2 sm:grid-cols-[2fr_1fr_1fr]">
+                <input aria-label={`Product name ${row.id}`} value={row.name} onChange={e => setFlyerCandidates(list => list.map(item => item.id === row.id ? { ...item, name: e.target.value } : item))} className="rounded border border-zinc-700 bg-zinc-900 p-2 text-xs text-white" placeholder="Product name" />
+                <input aria-label={`Normal price ${row.id}`} value={row.normalPrice} onChange={e => setFlyerCandidates(list => list.map(item => item.id === row.id ? { ...item, normalPrice: e.target.value } : item))} className="rounded border border-zinc-700 bg-zinc-900 p-2 text-xs text-white" placeholder="Normal price" />
+                <input aria-label={`Promo price ${row.id}`} value={row.promoPrice} onChange={e => setFlyerCandidates(list => list.map(item => item.id === row.id ? { ...item, promoPrice: e.target.value } : item))} className="rounded border border-zinc-700 bg-zinc-900 p-2 text-xs text-white" placeholder="Promo price" />
+                <p className="text-[10px] text-zinc-500 sm:col-span-3">OCR: {row.sourceLine}</p>
+              </div>)}
+            </div>
+            <Button type="button" onClick={useFlyerCandidates} className="bg-lime-600 hover:bg-lime-700">Use checked rows for column mapping</Button>
+          </div>}
+          {flyerOcrText && <details className="rounded-lg border border-zinc-700 p-2"><summary className="cursor-pointer text-xs text-zinc-300">Show all recognised flyer text</summary><textarea readOnly value={flyerOcrText} rows={8} className="mt-2 w-full rounded bg-zinc-950 p-2 text-xs text-zinc-300" /></details>}
+          <p className="text-xs text-sky-300">Flyer page preview — enter the promotion dates, then run browser OCR. OCR suggestions must be checked manually.</p>
           <div className="max-h-96 overflow-auto rounded-lg border border-zinc-700 bg-zinc-950 p-2">
             <img
               src={flyerPreviewUrl}
