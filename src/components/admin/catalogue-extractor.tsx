@@ -95,7 +95,7 @@ function downloadCsv(rows: DraftRow[]) {
   const esc = (v: unknown) => '"' + String(v ?? '').replace(/"/g, '""') + '"'
   const lines = rows.map(r => [r.name,'Boxer',r.unit,r.normalPrice,r.promoPrice,r.startDate,r.endDate,r.category,'',''].map(esc).join(','))
   const blob = new Blob(['\uFEFF', [headers.map(esc).join(','), ...lines].join('\r\n')], { type: 'text/csv;charset=utf-8' })
-  const url = URL.createObjectURL(blob), a = document.createElement('a'); a.href = url; a.download = 'boxer-reviewed-catalogue-' + new Date().toISOString().slice(0,10) + '.csv'; a.click(); a.remove(); window.setTimeout(() => URL.revokeObjectURL(url), 1500)
+  const url = URL.createObjectURL(blob), a = document.createElement('a'); a.href = url; a.download = 'boxer-reviewed-catalogue-' + new Date().toISOString().slice(0,10) + '.csv'; document.body.appendChild(a); a.click(); a.remove(); window.setTimeout(() => URL.revokeObjectURL(url), 1500)
 }
 
 export function CatalogueExtractor() {
