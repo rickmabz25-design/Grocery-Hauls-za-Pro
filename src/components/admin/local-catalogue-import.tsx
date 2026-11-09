@@ -11,7 +11,7 @@ import { Download, FileSpreadsheet, Upload } from 'lucide-react'
 type Store = { id: string; name: string; color?: string }
 type Category = { id: string; name: string; icon?: string }
 type ParsedFile = { headers: string[]; records: Record<string, unknown>[]; name: string; defaultStart?: string; defaultEnd?: string }
-type FlyerCandidate = { id: number; name: string; normalPrice: string; promoPrice: string; sourceLine: string }
+type FlyerCandidate = { id: number; name: string; normalPrice: string; promoPrice: string; sourceLine: string; confidence: number }
 
 const fields = [
   ['name', 'Product name *'], ['store', 'Store (optional if default selected)'],
@@ -197,31 +197,58 @@ export function LocalCatalogueImport() {
           return found.map(price => ({ line, price }))
         }).filter(item => {
           const value = Number(item.price.replace(',', '.'))
-          return Number.isFinite(value) && value >= 10 && value <= 9999
+          return Number.isFinite(value) && value >= 10 && value        // Keep only plausible product-description lines. OCR fragments, price-only
+        // lines and decorative flyer text are not eligible to receive a price.
+        const productLines = grouped.filter(line => {
+          const tokens = line.text.split(/\\s+/).filter(Boolean)
+          const letters = line.text.match(/[\\p{L}]/gu)?.length || 0
+          const usefulTokens = tokens.filter(token => /[\\p{L}]{2}/u.test(token)).length
+          const letterRatio = letters / Math.max(1, line.text.length)
+          return usefulTokens >= 2 && letters >= 7 && letterRatio >= 0.55
         })
-        const productLines = grouped.filter(line => /[\p{L}]{3}/u.test(line.text) && line.text.replace(/[^\p{L}]/gu, '').length >= 4)
         const candidates = priceLines.map((item, index) => {
+          const priceCenter = (item.line.x0 + item.line.x1) / 2
+          const lineWidth = Math.max(1, item.line.x1 - item.line.x0)
           const nearest = productLines
-            .filter(line => line.y <= item.line.y + medianHeight * 1.5)
+            .filter(line => Math.abs(item.line.y - line.y) >= medianHeight * 0.8)
             .map(line => {
+              const productCenter = (line.x0 + line.x1) / 2
+              const productWidth = Math.max(1, line.x1 - line.x0)
               const overlap = Math.max(0, Math.min(line.x1, item.line.x1) - Math.max(line.x0, item.line.x0))
-              const width = Math.max(1, Math.min(line.x1 - line.x0, item.line.x1 - item.line.x0))
-              const horizontalPenalty = 1 - overlap / width
+              const overlapRatio = overlap / Math.min(lineWidth, productWidth)
+              const centerDistance = Math.abs(priceCenter - productCenter)
               const verticalDistance = Math.abs(item.line.y - line.y)
-              return { line, score: verticalDistance + horizontalPenalty * medianHeight * 5 }
+              // Penalise matches across columns. A nearby price should normally
+              // sit in the same flyer column and close to its product description.
+              const horizontalPenalty = centerDistance / Math.max(medianHeight * 5, productWidth * 0.7)
+              const score = verticalDistance / medianHeight + horizontalPenalty * 7 - overlapRatio * 2
+              return { line, score, overlapRatio, verticalDistance, centerDistance }
             })
+            .filter(match => match.verticalDistance <= medianHeight * 10 && match.horizontalPenalty !== 1)
             .sort((a, b) => a.score - b.score)[0]
-          if (!nearest || nearest.score > medianHeight * 14) return null
-          const name = nearest.line.text.replace(/\b(?:special|save|was|now|each|per|combo)\b/gi, ' ').replace(/\s+/g, ' ').trim()
-          if (name.length < 4) return null
+          if (!nearest || nearest.score > 8.5) return null
+          const name = nearest.line.text
+            .replace(/\\b(?:special|save|was|now|each|per|combo|buy|both)\\b/gi, ' ')
+            .replace(/[^\\p{L}\\p{N} &'’()-]/gu, ' ')
+            .replace(/\\s+/g, ' ').trim()
+          if (name.length < 8 || (name.match(/[\\p{L}]/gu)?.length || 0) < 7) return null
+          const confidence = Math.max(0, Math.min(99, Math.round(100 - nearest.score * 8)))
+          // Conservative threshold: omit weak matches rather than presenting a
+          // likely wrong product/price pair as a useful suggestion.
+          if (confidence < 55) return null
           return {
             id: index + 1, name, normalPrice: '', promoPrice: item.price,
+            confidence,
             sourceLine: `${nearest.line.text}  →  ${item.line.text}`,
           }
         }).filter((row): row is NonNullable<typeof row> => row !== null)
-        setFlyerCandidates(candidates)
-        setFlyerOcrStatus(`Recognised ${lines.length} text lines and ${usableWords.length} positioned words; ${candidates.length} nearby product/price suggestions found. Whole-number prices are included, but every match needs manual checking.`)
-        if (!candidates.length) toast({ title: 'Text recognised, no safe product rows found', description: 'Use the recognised text below to check the flyer manually.', variant: 'destructive' })
+        // Avoid duplicate price detections producing repeated identical rows.
+        const uniqueCandidates = candidates.filter((candidate, index, list) =>
+          list.findIndex(other => other.name === candidate.name && other.promoPrice === candidate.promoPrice) === index,
+        )
+        setFlyerCandidates(uniqueCandidates)
+        setFlyerOcrStatus(`Recognised ${lines.length} text lines and ${usableWords.length} positioned words; ${uniqueCandidates.length} conservative product/price suggestions found. Whole-number prices are included, but every match needs manual checking.`)
+        if (!uniqueCandidates.length) toast({ title: 'Text recognised, no safe product rows found', description: 'Use the recognised text below to check the flyer manually.', variant: 'destructive' })
       } finally { await worker.terminate() }
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Flyer text recognition failed.'
@@ -367,7 +394,7 @@ export function LocalCatalogueImport() {
                 <input aria-label={`Product name ${row.id}`} value={row.name} onChange={e => setFlyerCandidates(list => list.map(item => item.id === row.id ? { ...item, name: e.target.value } : item))} className="rounded border border-zinc-700 bg-zinc-900 p-2 text-xs text-white" placeholder="Product name" />
                 <input aria-label={`Normal price ${row.id}`} value={row.normalPrice} onChange={e => setFlyerCandidates(list => list.map(item => item.id === row.id ? { ...item, normalPrice: e.target.value } : item))} className="rounded border border-zinc-700 bg-zinc-900 p-2 text-xs text-white" placeholder="Normal price" />
                 <input aria-label={`Promo price ${row.id}`} value={row.promoPrice} onChange={e => setFlyerCandidates(list => list.map(item => item.id === row.id ? { ...item, promoPrice: e.target.value } : item))} className="rounded border border-zinc-700 bg-zinc-900 p-2 text-xs text-white" placeholder="Promo price" />
-                <p className="text-[10px] text-zinc-500 sm:col-span-3">OCR: {row.sourceLine}</p>
+                <p className="text-[10px] text-zinc-500 sm:col-span-3">OCR: {row.sourceLine} · Match confidence: {row.confidence}%</p>
               </div>)}
             </div>
             <Button type="button" onClick={useFlyerCandidates} className="bg-lime-600 hover:bg-lime-700">Use checked rows for column mapping</Button>
