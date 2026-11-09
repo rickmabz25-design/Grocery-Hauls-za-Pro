@@ -11,7 +11,7 @@ import { Download, FileSpreadsheet, Upload } from 'lucide-react'
 type Store = { id: string; name: string; color?: string }
 type Category = { id: string; name: string; icon?: string }
 type ParsedFile = { headers: string[]; records: Record<string, unknown>[]; name: string; defaultStart?: string; defaultEnd?: string }
-type FlyerCandidate = { id: number; name: string; normalPrice: string; promoPrice: string; sourceLine: string; confidence: number }
+type FlyerCandidate = { id: number; name: string; normalPrice: string; promoPrice: string; sourceLine: string }
 
 const fields = [
   ['name', 'Product name *'], ['store', 'Store (optional if default selected)'],
@@ -188,11 +188,13 @@ export function LocalCatalogueImport() {
           line.words.sort((a, b) => a.bbox.x0 - b.bbox.x0)
           line.text = line.words.map(word => word.text).join(' ').trim()
         })
+        // Accept only standalone currency/price tokens. Do not strip letters,
+        // percent signs or pack units: 180g, 37%, 10% and 250g are not prices.
         const pricePattern = /^(?:R\s*)?\d{1,4}(?:[.,]\d{2})?$/i
         const priceLines = grouped.flatMap(line => {
           const found = line.words.map(word => {
-            const cleaned = word.text.replace(/^[^\dRr]+|[^\d.,]+$/g, '').replace(/^R(?=\d)/i, 'R')
-            return pricePattern.test(cleaned) ? cleaned.replace(/^R\s*/i, '') : ''
+            const token = word.text.trim().replace(/^[.,:;!?()[\]{}]+|[.,:;!?()[\]{}]+$/g, '')
+            return pricePattern.test(token) ? token.replace(/^R\s*/i, '') : ''
           }).filter(Boolean)
           return found.map(price => ({ line, price }))
         }).filter(item => {
@@ -208,6 +210,10 @@ export function LocalCatalogueImport() {
           const letterRatio = letters / Math.max(1, line.text.length)
           return usefulTokens >= 2 && letters >= 7 && letterRatio >= 0.55
         })
+
+        // A price must sit close to, and horizontally align with, a description.
+        // Proximity alone is not enough: reject weak column matches rather than
+        // presenting a plausible-looking but unrelated product/price pair.
         const candidates = priceLines.map((item, index) => {
           const priceCenter = (item.line.x0 + item.line.x1) / 2
           const lineWidth = Math.max(1, item.line.x1 - item.line.x0)
@@ -220,23 +226,24 @@ export function LocalCatalogueImport() {
               const overlapRatio = overlap / Math.min(lineWidth, productWidth)
               const centerDistance = Math.abs(priceCenter - productCenter)
               const verticalDistance = Math.abs(item.line.y - line.y)
-              const horizontalPenalty = centerDistance / Math.max(medianHeight * 5, productWidth * 0.7)
-              const score = verticalDistance / medianHeight + horizontalPenalty * 7 - overlapRatio * 2
-              return { line, score, verticalDistance, horizontalPenalty }
+              const maxCenterDistance = Math.max(medianHeight * 4, productWidth * 0.35)
+              const score = verticalDistance / medianHeight + centerDistance / Math.max(1, maxCenterDistance) * 5 - overlapRatio * 2
+              return { line, score, verticalDistance, centerDistance, overlapRatio, maxCenterDistance }
             })
-            .filter(match => match.verticalDistance <= medianHeight * 10 && match.horizontalPenalty <= 1.25)
+            .filter(match =>
+              match.verticalDistance <= medianHeight * 6 &&
+              match.overlapRatio >= 0.35 &&
+              match.centerDistance <= match.maxCenterDistance,
+            )
             .sort((a, b) => a.score - b.score)[0]
-          if (!nearest || nearest.score > 8.5) return null
+          if (!nearest || nearest.score > 9) return null
           const name = nearest.line.text
             .replace(/\b(?:special|save|was|now|each|per|combo|buy|both)\b/gi, ' ')
             .replace(/[^\p{L}\p{N} &'’()-]/gu, ' ')
             .replace(/\s+/g, ' ').trim()
           if (name.length < 8 || (name.match(/[\p{L}]/gu)?.length || 0) < 7) return null
-          const confidence = Math.max(0, Math.min(99, Math.round(100 - nearest.score * 8)))
-          if (confidence < 55) return null
           return {
             id: index + 1, name, normalPrice: '', promoPrice: item.price,
-            confidence,
             sourceLine: nearest.line.text + '  →  ' + item.line.text,
           }
         }).filter((row): row is NonNullable<typeof row> => row !== null)
@@ -391,7 +398,7 @@ export function LocalCatalogueImport() {
                 <input aria-label={`Product name ${row.id}`} value={row.name} onChange={e => setFlyerCandidates(list => list.map(item => item.id === row.id ? { ...item, name: e.target.value } : item))} className="rounded border border-zinc-700 bg-zinc-900 p-2 text-xs text-white" placeholder="Product name" />
                 <input aria-label={`Normal price ${row.id}`} value={row.normalPrice} onChange={e => setFlyerCandidates(list => list.map(item => item.id === row.id ? { ...item, normalPrice: e.target.value } : item))} className="rounded border border-zinc-700 bg-zinc-900 p-2 text-xs text-white" placeholder="Normal price" />
                 <input aria-label={`Promo price ${row.id}`} value={row.promoPrice} onChange={e => setFlyerCandidates(list => list.map(item => item.id === row.id ? { ...item, promoPrice: e.target.value } : item))} className="rounded border border-zinc-700 bg-zinc-900 p-2 text-xs text-white" placeholder="Promo price" />
-                <p className="text-[10px] text-zinc-500 sm:col-span-3">OCR: {row.sourceLine} · Match confidence: {row.confidence}%</p>
+                <p className="text-[10px] text-zinc-500 sm:col-span-3">OCR: {row.sourceLine} · Check that this OCR text and price belong to the same product</p>
               </div>)}
             </div>
             <Button type="button" onClick={useFlyerCandidates} className="bg-lime-600 hover:bg-lime-700">Use checked rows for column mapping</Button>
