@@ -1,5 +1,7 @@
 'use client'
 
+// Preview rebuild trigger: comment only; no application behaviour changes.
+
 import { useEffect, useState } from 'react'
 import * as XLSX from 'xlsx'
 import { autoMap, buildReviewRows, rowHasError, reviewSummary, isLikelyUnstructuredFlyer, type ImportReviewRow } from '@/lib/import-review'
