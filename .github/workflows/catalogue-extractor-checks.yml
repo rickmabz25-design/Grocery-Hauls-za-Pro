@@ -1,9 +1,6 @@
 name: Catalogue extractor checks
 
 on:
-  push:
-    branches:
-      - feature/boxer-catalogue-extractor
   pull_request:
     branches:
       - feature/manual-flyer-product-price-review
