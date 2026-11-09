@@ -200,9 +200,9 @@ export function LocalCatalogueImport() {
           return Number.isFinite(value) && value >= 10 && value        // Keep only plausible product-description lines. OCR fragments, price-only
         // lines and decorative flyer text are not eligible to receive a price.
         const productLines = grouped.filter(line => {
-          const tokens = line.text.split(/\\s+/).filter(Boolean)
-          const letters = line.text.match(/[\\p{L}]/gu)?.length || 0
-          const usefulTokens = tokens.filter(token => /[\\p{L}]{2}/u.test(token)).length
+          const tokens = line.text.split(/\s+/).filter(Boolean)
+          const letters = line.text.match(/[\p{L}]/gu)?.length || 0
+          const usefulTokens = tokens.filter(token => /[\p{L}]{2}/u.test(token)).length
           const letterRatio = letters / Math.max(1, line.text.length)
           return usefulTokens >= 2 && letters >= 7 && letterRatio >= 0.55
         })
@@ -222,16 +222,16 @@ export function LocalCatalogueImport() {
               // sit in the same flyer column and close to its product description.
               const horizontalPenalty = centerDistance / Math.max(medianHeight * 5, productWidth * 0.7)
               const score = verticalDistance / medianHeight + horizontalPenalty * 7 - overlapRatio * 2
-              return { line, score, overlapRatio, verticalDistance, centerDistance }
+              return { line, score, overlapRatio, verticalDistance, centerDistance, horizontalPenalty }
             })
-            .filter(match => match.verticalDistance <= medianHeight * 10 && match.horizontalPenalty !== 1)
+            .filter(match => match.verticalDistance <= medianHeight * 10 && match.horizontalPenalty <= 1.25)
             .sort((a, b) => a.score - b.score)[0]
           if (!nearest || nearest.score > 8.5) return null
           const name = nearest.line.text
-            .replace(/\\b(?:special|save|was|now|each|per|combo|buy|both)\\b/gi, ' ')
-            .replace(/[^\\p{L}\\p{N} &'’()-]/gu, ' ')
-            .replace(/\\s+/g, ' ').trim()
-          if (name.length < 8 || (name.match(/[\\p{L}]/gu)?.length || 0) < 7) return null
+            .replace(/\b(?:special|save|was|now|each|per|combo|buy|both)\b/gi, ' ')
+            .replace(/[^\p{L}\p{N} &'’()-]/gu, ' ')
+            .replace(/\s+/g, ' ').trim()
+          if (name.length < 8 || (name.match(/[\p{L}]/gu)?.length || 0) < 7) return null
           const confidence = Math.max(0, Math.min(99, Math.round(100 - nearest.score * 8)))
           // Conservative threshold: omit weak matches rather than presenting a
           // likely wrong product/price pair as a useful suggestion.
@@ -239,7 +239,7 @@ export function LocalCatalogueImport() {
           return {
             id: index + 1, name, normalPrice: '', promoPrice: item.price,
             confidence,
-            sourceLine: `${nearest.line.text}  →  ${item.line.text}`,
+            sourceLine: nearest.line.text + '  →  ' + item.line.text,
           }
         }).filter((row): row is NonNullable<typeof row> => row !== null)
         // Avoid duplicate price detections producing repeated identical rows.
