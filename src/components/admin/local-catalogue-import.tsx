@@ -122,7 +122,7 @@ export function LocalCatalogueImport() {
       if (!context) throw new Error('Your browser could not prepare the flyer image for text recognition.')
       context.drawImage(image, 0, 0)
       await new Promise<void>((resolve, reject) => canvas.toBlob(blob => blob ? resolve() : reject(new Error('Could not prepare flyer image.')), 'image/png'))
-      const w = window as Window & { Tesseract?: { createWorker: (lang: string, oem?: number) => Promise<{ recognize: (source: HTMLCanvasElement) => Promise<{ data: { text: string; lines?: Array<{ text: string }>; words?: Array<{ text: string; confidence?: number; bbox: { x0: number; y0: number; x1: number; y1: number } }> } }>; terminate: () => Promise<void> }> } }
+      const w = window as Window & { Tesseract?: { createWorker: (lang: string, oem?: number) => Promise<{ recognize: (source: HTMLCanvasElement, options?: Record<string, unknown>, output?: { blocks?: boolean }) => Promise<{ data: { text: string; lines?: Array<{ text: string }>; words?: Array<{ text: string; confidence?: number; bbox: { x0: number; y0: number; x1: number; y1: number } }>; blocks?: Array<{ paragraphs?: Array<{ lines?: Array<{ words?: Array<{ text: string; confidence?: number; bbox: { x0: number; y0: number; x1: number; y1: number } }> }> }> }> } }>; terminate: () => Promise<void> }> } }
       if (!w.Tesseract) {
         await new Promise<void>((resolve, reject) => {
           const existing = document.querySelector<HTMLScriptElement>('script[data-flyer-ocr="tesseract"]')
@@ -138,7 +138,9 @@ export function LocalCatalogueImport() {
       setFlyerOcrStatus('Reading flyer text locally in this browser…')
       const worker = await w.Tesseract.createWorker('eng', 1)
       try {
-        const result = await worker.recognize(canvas)
+        // Tesseract.js v6 returns text only by default. Explicitly request
+        // the blocks JSON output so word bounding boxes are available.
+        const result = await worker.recognize(canvas, {}, { blocks: true })
         const lines = (result.data.lines || result.data.text.split(/\r?\n/).map(text => ({ text }))).map(line => line.text.trim()).filter(Boolean)
         setFlyerOcrText(lines.join('\n'))
 
