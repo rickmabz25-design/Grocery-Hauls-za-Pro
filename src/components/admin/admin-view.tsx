@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { apiGet, apiPost, apiPatch, apiDelete, apiUpload, STATIC_MODE } from '@/lib/api'
 import { LocalCatalogueImport } from '@/components/admin/local-catalogue-import'
+import { CatalogueExtractor } from '@/components/admin/catalogue-extractor'
 import { toast } from '@/hooks/use-toast'
 import { formatZAR, formatShortDate } from '@/lib/format'
 import { ADMIN_EMAIL_PRIMARY } from '@/lib/constants'
@@ -16,12 +17,13 @@ import {
   LogOut, Search, ArrowLeft, Trash2, Pause, Play, Plus, Download, UserPlus, Sparkles,
 } from 'lucide-react'
 
-type AdminTab = 'overview' | 'users' | 'import' | 'promotions' | 'whatsnew' | 'files' | 'admins'
+type AdminTab = 'overview' | 'users' | 'import' | 'extractor' | 'promotions' | 'whatsnew' | 'files' | 'admins'
 
 const tabs: { key: AdminTab; label: string; icon: React.ComponentType<{ className?: string }> }[] = [
   { key: 'overview', label: 'Overview', icon: LayoutDashboard },
   { key: 'users', label: 'Users', icon: Users },
   { key: 'import', label: 'Upload Data', icon: Upload },
+  { key: 'extractor', label: 'Catalogue Extractor', icon: FileSpreadsheet },
   { key: 'promotions', label: 'Promotions', icon: Tag },
   { key: 'whatsnew', label: "What's New", icon: Sparkles },
   { key: 'files', label: 'Files', icon: FolderOpen },
@@ -104,7 +106,7 @@ export function AdminView() {
       {/* Tabs */}
       <div className="bg-zinc-900/60 border-b border-zinc-800 px-3 py-2 sticky top-[57px] z-20">
         <div className="max-w-5xl mx-auto flex gap-1.5 overflow-x-auto">
-          {(STATIC_MODE ? tabs.filter((t) => t.key === 'import') : tabs).map((t) => {
+          {(STATIC_MODE ? tabs.filter((t) => t.key === 'import' || t.key === 'extractor') : tabs).map((t) => {
             const Icon = t.icon
             return (
               <button
@@ -125,6 +127,7 @@ export function AdminView() {
         {tab === 'overview' && <OverviewTab />}
         {tab === 'users' && <UsersTab />}
         {tab === 'import' && (STATIC_MODE ? <LocalCatalogueImport /> : <ImportTab />)}
+        {tab === 'extractor' && STATIC_MODE && <CatalogueExtractor />}
         {tab === 'promotions' && <PromotionsTab />}
         {tab === 'whatsnew' && <WhatsNewTab />}
         {tab === 'files' && <FilesTab />}
