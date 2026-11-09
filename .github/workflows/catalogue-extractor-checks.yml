@@ -6,7 +6,7 @@ on:
       - feature/boxer-catalogue-extractor
   pull_request:
     branches:
-      - feature/boxer-catalogue-extractor
+      - feature/manual-flyer-product-price-review
 
 permissions:
   contents: read
