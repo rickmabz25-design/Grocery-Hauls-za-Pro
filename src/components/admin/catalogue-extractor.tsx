@@ -65,7 +65,7 @@ async function pdfCanvases(file: File, progress: (s: string) => void): Promise<H
     const scale = Math.min(1, 2600 / Math.max(base.width, base.height)), viewport = page.getViewport({ scale: 2.2 * scale })
     const canvas = document.createElement('canvas'); canvas.width = Math.ceil(viewport.width); canvas.height = Math.ceil(viewport.height)
     const ctx = canvas.getContext('2d'); if (!ctx) throw new Error('Could not render PDF page ' + n + '.')
-    await page.render({ canvasContext: ctx, viewport }).promise; pages.push(canvas)
+    await page.render({ canvas, canvasContext: ctx, viewport }).promise; pages.push(canvas)
   }
   return pages
 }
