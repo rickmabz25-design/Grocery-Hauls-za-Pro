@@ -146,8 +146,27 @@ export function LocalCatalogueImport() {
         // to appear on the same OCR line. Flyer layouts commonly put prices below
         // product descriptions or in a separate nearby price panel.
         type OcrWord = { text: string; confidence?: number; bbox: { x0: number; y0: number; x1: number; y1: number } }
-        const words = (result.data.words || []) as OcrWord[]
-        const usableWords = words.filter(word => word.text.trim() && (word.confidence == null || word.confidence >= 20))
+        type OcrDataWithBlocks = typeof result.data & {
+          blocks?: Array<{ paragraphs?: Array<{ lines?: Array<{ words?: OcrWord[] }> }> }>
+        }
+        const ocrData = result.data as OcrDataWithBlocks
+        // Tesseract.js v6 nests positioned words inside blocks > paragraphs > lines.
+        // Keep the top-level fallback for engines/builds that expose data.words.
+        const topLevelWords = (ocrData.words || []) as OcrWord[]
+        const blockWords = (ocrData.blocks || []).flatMap(block =>
+          (block.paragraphs || []).flatMap(paragraph =>
+            (paragraph.lines || []).flatMap(line => line.words || []),
+          ),
+        )
+        const words = topLevelWords.length ? topLevelWords : blockWords
+        const usableWords = words.filter(word =>
+          word.text.trim() &&
+          Number.isFinite(word.bbox?.x0) &&
+          Number.isFinite(word.bbox?.y0) &&
+          Number.isFinite(word.bbox?.x1) &&
+          Number.isFinite(word.bbox?.y1) &&
+          (word.confidence == null || word.confidence >= 20),
+        )
         const heights = usableWords.map(word => Math.max(1, word.bbox.y1 - word.bbox.y0)).sort((a, b) => a - b)
         const medianHeight = heights.length ? heights[Math.floor(heights.length / 2)]! : 16
         const grouped: Array<{ words: OcrWord[]; y: number; x0: number; x1: number; text: string }> = []
