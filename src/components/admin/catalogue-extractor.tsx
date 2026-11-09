@@ -6,10 +6,17 @@ import { Button } from '@/components/ui/button'
 
 type DraftRow = { id: string; name: string; unit: string; normalPrice: string; promoPrice: string; startDate: string; endDate: string; category: string; page: string; sourceText: string; reviewed: boolean }
 type OcrWorker = { recognize: (source: HTMLCanvasElement) => Promise<{ data: { text: string } }>; terminate: () => Promise<void> }
-const PRICE_RE = /(?:R\s*)?\b\d{1,4}(?:[.,]\d{2})\b/gi
+const PRICE_RE = /(?:R\s*\d{1,4}(?:[.,]\d{2})?|\b\d{1,4}[.,]\d{2})/gi
 const NON_PRODUCT = /\b(save|was|now|each|per|special|deal|offer|valid|limited|while|stocks|last|from|only|buy|get|free|off|ends|until|boxer|superstores|gauteng|national|selected|terms|conditions)\b/i
 
 function money(raw: string) { const n = Number(raw.replace(/[Rr\s]/g, '').replace(',', '.')); return Number.isFinite(n) ? n.toFixed(2) : '' }
+
+function readableProductName(value: string) {
+  const name = value.replace(/\s+/g, ' ').trim()
+  const words = name.match(/[A-Za-z][A-Za-z0-9&'’-]*/g) ?? []
+  const noise = (name.match(/[^A-Za-z0-9\s&'’().,-]/g) ?? []).length
+  return name.length >= 5 && name.length <= 80 && words.length >= 2 && noise <= 1
+}
 
 function rowsFromTile(text: string, page: number, tile: number, startDate: string, endDate: string): DraftRow[] {
   const lines = text.split(/\r?\n/).map(x => x.replace(/\s+/g, ' ').trim()).filter(Boolean)
@@ -18,16 +25,17 @@ function rowsFromTile(text: string, page: number, tile: number, startDate: strin
     const matches = [...lines[i].matchAll(PRICE_RE)]
     if (!matches.length) continue
     const nameParts = lines.slice(Math.max(0, i - 3), i + 1).map(x => x.replace(PRICE_RE, ' ').replace(/\b(?:R|WAS|NOW)\b/gi, ' ').replace(/[|•:]/g, ' ').trim())
-      .filter(x => x.length >= 4 && /[a-z]{2}/i.test(x) && !NON_PRODUCT.test(x))
-    const name = (nameParts[nameParts.length - 1] || '').replace(/\s+/g, ' ').trim()
+      .filter(x => readableProductName(x) && !NON_PRODUCT.test(x))
+    const name = [...nameParts].reverse()[0] || ''
     if (!name) continue
     const prices = matches.map(m => money(m[0])).filter(Boolean)
     if (!prices.length) continue
     const hasWas = /\bwas\b/i.test(lines[i])
     const hasNow = /\bnow\b/i.test(lines[i])
+    if (prices.length > 1 && !hasNow) continue
     output.push({ id: 'p' + page + '-t' + tile + '-l' + i + '-' + output.length, name, unit: '',
       normalPrice: hasWas && prices.length > 1 ? prices[0] : '',
-      promoPrice: hasNow && prices.length > 1 ? prices[prices.length - 1] : prices[prices.length - 1],
+      promoPrice: prices[prices.length - 1],
       startDate, endDate, category: '', page: 'Page ' + page + ', section ' + tile, sourceText: lines[i], reviewed: false })
   }
   return output
@@ -87,19 +95,19 @@ function downloadCsv(rows: DraftRow[]) {
   const esc = (v: unknown) => '"' + String(v ?? '').replace(/"/g, '""') + '"'
   const lines = rows.map(r => [r.name,'Boxer',r.unit,r.normalPrice,r.promoPrice,r.startDate,r.endDate,r.category,'',''].map(esc).join(','))
   const blob = new Blob(['\uFEFF', [headers.map(esc).join(','), ...lines].join('\r\n')], { type: 'text/csv;charset=utf-8' })
-  const url = URL.createObjectURL(blob), a = document.createElement('a'); a.href = url; a.download = 'boxer-reviewed-catalogue-' + new Date().toISOString().slice(0,10) + '.csv'; a.click(); URL.revokeObjectURL(url)
+  const url = URL.createObjectURL(blob), a = document.createElement('a'); a.href = url; a.download = 'boxer-reviewed-catalogue-' + new Date().toISOString().slice(0,10) + '.csv'; a.click(); a.remove(); window.setTimeout(() => URL.revokeObjectURL(url), 1500)
 }
 
 export function CatalogueExtractor() {
   const [files, setFiles] = useState<File[]>([]), [startDate, setStartDate] = useState(''), [endDate, setEndDate] = useState('')
-  const [rows, setRows] = useState<DraftRow[]>([]), [busy, setBusy] = useState(false), [status, setStatus] = useState(''), [error, setError] = useState('')
+  const [rows, setRows] = useState<DraftRow[]>([]), [hasRun, setHasRun] = useState(false), [busy, setBusy] = useState(false), [status, setStatus] = useState(''), [error, setError] = useState('')
   const readyRows = useMemo(() => rows.filter(r => r.reviewed && r.name.trim() && r.promoPrice.trim()), [rows])
   const unreviewed = rows.length - rows.filter(r => r.reviewed).length
   const updateRow = (id: string, patch: Partial<DraftRow>) => setRows(current => current.map(r => r.id === id ? { ...r, ...patch, reviewed: patch.reviewed ?? false } : r))
   const run = async () => {
     if (!files.length) { setError('Choose a PDF or catalogue images first.'); return }
     if (!startDate || !endDate || startDate > endDate) { setError('Enter valid promotion dates.'); return }
-    setBusy(true); setError(''); setRows([])
+    setBusy(true); setError(''); setRows([]); setHasRun(false)
     try {
       setStatus('Loading free browser OCR…')
       const tesseract = await loadTesseract(), worker = await tesseract.createWorker('eng'), extracted: DraftRow[] = []
@@ -118,7 +126,7 @@ export function CatalogueExtractor() {
       } finally { await worker.terminate() }
       const unique = new Map<string, DraftRow>()
       for (const row of extracted) { const key = row.name.toLowerCase() + '|' + row.promoPrice + '|' + row.page; if (!unique.has(key)) unique.set(key, row) }
-      const candidates = [...unique.values()]; setRows(candidates)
+      const candidates = [...unique.values()]; setRows(candidates); setHasRun(true)
       setStatus(candidates.length ? 'Found ' + candidates.length + ' possible rows. Check every row against the original catalogue.' : 'No reliable product/price pairs found. Try clearer page images.')
     } catch (e) { setError(e instanceof Error ? e.message : 'Extraction failed.'); setStatus('') }
     finally { setBusy(false) }
@@ -132,13 +140,14 @@ export function CatalogueExtractor() {
       <label className="block text-[10px] font-bold uppercase text-zinc-400">Retailer<input value="Boxer" readOnly className="mt-1 w-full rounded-lg border border-zinc-700 bg-zinc-800 p-2.5 text-sm text-white" /></label>
       <label className="block text-[10px] font-bold uppercase text-zinc-400">Promotion valid from<input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} className="mt-1 w-full rounded-lg border border-zinc-700 bg-zinc-800 p-2.5 text-sm text-white" /></label>
       <label className="block text-[10px] font-bold uppercase text-zinc-400">Promotion valid until<input type="date" value={endDate} onChange={e => setEndDate(e.target.value)} className="mt-1 w-full rounded-lg border border-zinc-700 bg-zinc-800 p-2.5 text-sm text-white" /></label>
-      <label className="flex cursor-pointer items-center justify-center gap-2 rounded-xl border-2 border-dashed border-zinc-700 p-5 text-sm text-zinc-300 hover:border-sky-400"><FileUp className="h-5 w-5" /> Choose PDF and/or multiple catalogue images<input type="file" accept=".pdf,application/pdf,image/jpeg,image/png,image/webp" multiple className="hidden" onChange={e => { setFiles(Array.from(e.target.files || [])); setRows([]); setError(''); e.currentTarget.value = '' }} /></label>
+      <label className="flex cursor-pointer items-center justify-center gap-2 rounded-xl border-2 border-dashed border-zinc-700 p-5 text-sm text-zinc-300 hover:border-sky-400"><FileUp className="h-5 w-5" /> Choose PDF and/or multiple catalogue images<input type="file" accept=".pdf,application/pdf,image/jpeg,image/png,image/webp" multiple className="hidden" onChange={e => { setFiles(Array.from(e.target.files || [])); setRows([]); setHasRun(false); setError(''); e.currentTarget.value = '' }} /></label>
       {files.length > 0 && <div className="rounded-lg bg-zinc-800 p-3 text-xs text-zinc-300"><b className="text-white">{files.length} file(s) selected</b><ul className="mt-1 list-disc pl-4">{files.map((f,i) => <li key={i}>{f.name} · {(f.size/1024/1024).toFixed(1)} MB</li>)}</ul></div>}
       <Button onClick={run} disabled={busy || !files.length} className="w-full bg-sky-600 hover:bg-sky-700">{busy ? 'Extracting…' : 'Extract catalogue products'}</Button>
       {status && <p role="status" className="text-xs text-sky-300">{status}</p>}{error && <p role="alert" className="text-xs text-red-300">{error}</p>}
     </section>
-    {rows.length > 0 && <section className="rounded-2xl border border-zinc-800 bg-zinc-900 p-5 space-y-3">
+    {hasRun && <section className="rounded-2xl border border-zinc-800 bg-zinc-900 p-5 space-y-3">
       <div><h3 className="font-bold text-sm">Review extracted rows</h3><p className="text-xs text-zinc-400 mt-1">{rows.length} candidates · {unreviewed} still need review · {readyRows.length} approved</p></div>
+      {rows.length === 0 && <p className="rounded-lg border border-zinc-700 bg-zinc-800/60 p-3 text-xs text-zinc-300">No candidates remain in this review. Choose the catalogue files and run extraction again to start a fresh review.</p>}
       {rows.map(row => <div key={row.id} className="rounded-xl border border-zinc-700 p-3 space-y-2">
         <div className="flex items-center justify-between"><p className="text-[10px] uppercase text-zinc-500">{row.page}</p><button type="button" onClick={() => setRows(current => current.filter(r => r.id !== row.id))} aria-label="Remove row" className="text-zinc-500 hover:text-red-300"><Trash2 className="h-4 w-4" /></button></div>
         <label className="block text-[10px] uppercase text-zinc-400">Product name<input value={row.name} onChange={e => updateRow(row.id,{name:e.target.value})} className="mt-1 w-full rounded border border-zinc-700 bg-zinc-800 p-2 text-sm text-white" /></label>
