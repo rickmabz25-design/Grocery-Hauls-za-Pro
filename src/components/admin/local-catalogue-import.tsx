@@ -198,18 +198,18 @@ export function LocalCatalogueImport() {
         })
         // Extract descriptions and standalone price tokens separately. Do not
         // pair them automatically: flyer layouts make proximity-based matches unsafe.
-        const pricePattern = /^(?:R\\s*)?\\d{1,4}(?:[.,]\\d{2})?$/i
+        const pricePattern = /^(?:R\s*)?\d{1,4}(?:[.,]\d{2})?$/i
         const priceTokens = grouped.flatMap(line => line.words.map(word => {
-          const token = word.text.trim().replace(/^[.,:;!?()[\\]{}]+|[.,:;!?()[\\]{}]+$/g, '')
+          const token = word.text.trim().replace(/^[.,:;!?()[\]{}]+|[.,:;!?()[\]{}]+$/g, '')
           if (!pricePattern.test(token)) return null
-          const value = Number(token.replace(/^R\\s*/i, '').replace(',', '.'))
+          const value = Number(token.replace(/^R\s*/i, '').replace(',', '.'))
           if (!Number.isFinite(value) || value < 10 || value > 10000) return null
-          return { text: token.replace(/^R\\s*/i, ''), sourceLine: line.text }
+          return { text: token.replace(/^R\s*/i, ''), sourceLine: line.text }
         }).filter((item): item is { text: string; sourceLine: string } => item !== null))
         const productLines = grouped.filter(line => {
-          const tokens = line.text.split(/\\s+/).filter(Boolean)
-          const letters = line.text.match(/[\\p{L}]/gu)?.length || 0
-          const usefulTokens = tokens.filter(token => /[\\p{L}]{2}/u.test(token)).length
+          const tokens = line.text.split(/\s+/).filter(Boolean)
+          const letters = line.text.match(/[\p{L}]/gu)?.length || 0
+          const usefulTokens = tokens.filter(token => /[\p{L}]{2}/u.test(token)).length
           const letterRatio = letters / Math.max(1, line.text.length)
           return usefulTokens >= 2 && letters >= 7 && letterRatio >= 0.55
         })
@@ -409,7 +409,7 @@ export function LocalCatalogueImport() {
               <Button type="button" onClick={useFlyerCandidates} className="bg-lime-600 hover:bg-lime-700">Continue with manually matched rows</Button>
             </div>}
           </div>}
-                    {flyerOcrText && <details className="rounded-lg border border-zinc-700 p-2"><summary className="cursor-pointer text-xs text-zinc-300">Show all recognised flyer text</summary><textarea readOnly value={flyerOcrText} rows={8} className="mt-2 w-full rounded bg-zinc-950 p-2 text-xs text-zinc-300" /></details>}
+          {flyerOcrText && <details className="rounded-lg border border-zinc-700 p-2"><summary className="cursor-pointer text-xs text-zinc-300">Show all recognised flyer text</summary><textarea readOnly value={flyerOcrText} rows={8} className="mt-2 w-full rounded bg-zinc-950 p-2 text-xs text-zinc-300" /></details>}
           <p className="text-xs text-sky-300">Flyer page preview — enter the promotion dates, then run browser OCR. OCR suggestions must be checked manually.</p>
           <div className="max-h-96 overflow-auto rounded-lg border border-zinc-700 bg-zinc-950 p-2">
             <img
