@@ -230,7 +230,7 @@ async function compareList(state: AnyRecord, listId: string, storeIds: string[],
         if (!eff) { missingNames.push(products.find((p) => p.id === item.productId)?.name || 'Product'); continue }
         available++; total += eff.price * qty; fullTotal += eff.normal * qty
         if (eff.promoPrice != null) { onPromo++; savings += (eff.normal - eff.price) * qty } else notOnPromo++
-      } else if (item.manualStoreId === store.id) {
+      } else if (item.manualStoreId === store.id && item.manualPrice != null) {
         available++; total += number(item.manualPrice) * qty; fullTotal += number(item.manualPrice) * qty; notOnPromo++
       } else missingNames.push(item.manualName || 'Manual item')
     }
@@ -259,7 +259,7 @@ async function compareList(state: AnyRecord, listId: string, storeIds: string[],
           const pa = effective(item.productId, a.id), pb = effective(item.productId, b.id)
           if (!pa && !pb) { valid = false; break }
           total += Math.min(pa ? pa.price * qty : Infinity, pb ? pb.price * qty : Infinity)
-        } else if (item.manualStoreId === a.id || item.manualStoreId === b.id) {
+        } else if (item.manualPrice != null && (item.manualStoreId === a.id || item.manualStoreId === b.id)) {
           total += number(item.manualPrice) * qty
         } else {
           valid = false
