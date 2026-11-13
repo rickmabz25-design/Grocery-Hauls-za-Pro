@@ -17,6 +17,7 @@ export type ImportReviewRow = {
   normalPrice: number | null
   promoPrice: number | null
   promoOffer: string
+  notes: string
   multiBuyOffer: boolean
   startDate: string | null
   endDate: string | null
@@ -31,6 +32,7 @@ export type ImportColumnMap = {
   normalPrice?: string
   promoPrice?: string
   promoOffer?: string
+  notes?: string
   startDate?: string
   endDate?: string
 }
@@ -112,6 +114,7 @@ export function autoMap(headers: string[]): ImportColumnMap {
     normalPrice: pick([/^normal(price)?$/, /^regular(price)?$/, /^was(price)?$/, /^old(price)?$/, /^rrp$/]),
     promoPrice: pick([/^promo(price)?$/, /^special(price)?$/, /^selling(price)?$/, /^now(price)?$/, /^deal(price)?$/]),
     promoOffer: pick([/^(?:price)?offer$/, /^promotionoffer$/, /^dealdescription$/, /^offertext$/, /^specialoffer$/]),
+    notes: pick([/^notes?$/, /^remarks?$/, /^additionalinfo$/]),
     startDate: pick([/^start(date)?$/, /^valid(from|fromdate)?$/, /^from(date)?$/, /^datefrom$/]),
     endDate: pick([/^end(date)?$/, /^valid(to|todate)?$/, /^to(date)?$/, /^dateto$/, /^expiry(date)?$/]),
   }
@@ -133,6 +136,7 @@ export function buildReviewRows(
     const unit = text(mapping.unit ? raw[mapping.unit] : '')
     const normalPrice = parsePrice(mapping.normalPrice ? raw[mapping.normalPrice] : null)
     const promoOffer = text(mapping.promoOffer ? raw[mapping.promoOffer] : '')
+    const notes = text(mapping.notes ? raw[mapping.notes] : '')
     const multiBuyOffer = /\bBUY\s+(?:\d+|ONE|TWO|THREE|FOUR|FIVE|SIX|SEVEN|EIGHT|NINE|TEN)\b|\b(?:\d+|two|three|four|five|six|seven|eight|nine|ten)\s+FOR\s+R?\s*\d/i.test(promoOffer)
     const promoPrice = parsePrice(mapping.promoPrice ? raw[mapping.promoPrice] : null) ?? (!multiBuyOffer && promoOffer ? parsePrice(promoOffer) : null)
     const startDate = parseDate(mapping.startDate ? raw[mapping.startDate] : null) || context.defaultStart || null
@@ -156,7 +160,7 @@ export function buildReviewRows(
       if (context.publishedKeys?.has(key))
         add('duplicate-published', 'This product/store already exists in the published catalogue', 'warning')
     }
-    return { sourceIndex: index, name, storeName, unit, normalPrice, promoPrice, promoOffer, multiBuyOffer, startDate, endDate, issues, raw }
+    return { sourceIndex: index, name, storeName, unit, normalPrice, promoPrice, promoOffer, notes, multiBuyOffer, startDate, endDate, issues, raw }
   })
 }
 
