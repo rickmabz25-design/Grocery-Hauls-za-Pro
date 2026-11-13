@@ -65,7 +65,7 @@ export function LocalCatalogueImport() {
 
   const counts = reviewSummary(rows)
   const approved = rows.filter(row => !rowHasError(row))
-  const hasPromoWithoutDates = approved.some(row => row.promoPrice != null && (!row.startDate || !row.endDate))
+  const hasPromoWithoutDates = approved.some(row => (row.promoPrice != null || row.multiBuyQuantity != null) && (!row.startDate || !row.endDate))
   const canImport = Boolean(file && rows.length && approved.length && !hasPromoWithoutDates && !busy)
 
   const parseFile = async (selected: File) => {
@@ -306,8 +306,8 @@ export function LocalCatalogueImport() {
       if (!row.storeName || !stores.some(s => s.name.toLowerCase() === row.storeName.toLowerCase())) {
         issues.push({ code: 'unknown-store', message: `Store “${row.storeName || '(blank)'}” is not in the store catalogue`, severity: 'error' as const })
       }
-      if (row.promoPrice != null && (!row.startDate || !row.endDate)) {
-        issues.push({ code: 'promo-dates-required', message: 'Promotion rows need valid start and end dates', severity: 'error' as const })
+      if ((row.promoPrice != null || row.multiBuyQuantity != null) && (!row.startDate || !row.endDate)) {
+        issues.push({ code: 'promo-dates-required', message: 'Promotion and multi-buy rows need valid start and end dates', severity: 'error' as const })
       }
       const categoryValue = mapping.category ? String(row.raw[mapping.category] || '').trim() : ''
       if (categoryValue && !categories.some(c => c.name.toLowerCase() === categoryValue.toLowerCase())) {
@@ -331,12 +331,13 @@ export function LocalCatalogueImport() {
           barcode: mapping.barcode ? String(row.raw[mapping.barcode] || '').trim() : '',
           brand: mapping.brand ? String(row.raw[mapping.brand] || '').trim() : '',
           categoryId: category?.id, normalPrice: row.normalPrice, promoPrice: row.promoPrice,
-          startDate: row.startDate, endDate: row.endDate,
+          multiBuyQuantity: row.multiBuyQuantity, multiBuyPrice: row.multiBuyPrice, singleItemPrice: row.singleItemPrice,
+          offerText: row.promoOffer, startDate: row.startDate, endDate: row.endDate,
         }
       })
       const result = await applyLocalCatalogueImport(payload)
       setSummary(result)
-      toast({ title: 'Local catalogue updated', description: `${result.rowsProcessed} approved rows saved in this browser.` })
+      toast({ title: 'Local catalogue updated', description: `${result.rowsProcessed} rows saved locally, including ${result.multiBuyPromosCreated} multi-buy offers.` })
     } catch (error) {
       toast({ title: 'Import not saved', description: error instanceof Error ? error.message : 'Please review the file and try again.', variant: 'destructive' })
     } finally {
@@ -353,11 +354,12 @@ export function LocalCatalogueImport() {
     const link = document.createElement('a'); link.href = url; link.download = 'groceryhaulz-import-template.csv'; link.click(); URL.revokeObjectURL(url)
   }
 
-  const exportCatalogueFile = async (kind: 'products' | 'promos') => {
+  const exportCatalogueFile = async (kind: 'products' | 'promos' | 'multiBuyPromos') => {
     try {
       const snapshot = await exportLocalCatalogueSnapshot()
       if (kind === 'products') downloadJson('products.json', { products: snapshot.products })
-      else downloadJson('promos.json', { promos: snapshot.promos })
+      else if (kind === 'promos') downloadJson('promos.json', { promos: snapshot.promos })
+      else downloadJson('multi-buy-promos.json', { multiBuyPromos: snapshot.multiBuyPromos })
       toast({ title: 'Catalogue file exported', description: `${kind}.json downloaded. Review it before publishing.` })
     } catch (error) {
       toast({ title: 'Export failed', description: error instanceof Error ? error.message : 'Could not export catalogue.', variant: 'destructive' })
@@ -472,8 +474,9 @@ export function LocalCatalogueImport() {
 
     {rows.length > 0 && <section className="rounded-2xl border border-zinc-800 bg-zinc-900 p-5 space-y-3">
       <div><h3 className="font-bold text-sm">Import review</h3><p className="mt-1 text-xs text-zinc-400">{counts.total} rows · {counts.errors} errors · {counts.warnings} warnings · {approved.length} ready</p></div>
-      <div className="grid grid-cols-3 gap-2 text-xs">
-        <div className="rounded-lg bg-zinc-800 p-2"><b>{counts.promoRows}</b><p className="text-zinc-400">Promotions</p></div>
+      <div className="grid grid-cols-2 gap-2 text-xs sm:grid-cols-4">
+        <div className="rounded-lg bg-zinc-800 p-2"><b>{counts.promoRows}</b><p className="text-zinc-400">Single-item promos</p></div>
+        <div className="rounded-lg bg-zinc-800 p-2"><b>{counts.multiBuyRows}</b><p className="text-zinc-400">Multi-buy deals</p></div>
         <div className="rounded-lg bg-zinc-800 p-2"><b>{counts.priceOnly}</b><p className="text-zinc-400">Price updates</p></div>
         <div className="rounded-lg bg-zinc-800 p-2"><b>{counts.errors}</b><p className="text-zinc-400">Errors</p></div>
       </div>
@@ -482,6 +485,8 @@ export function LocalCatalogueImport() {
           <div className="flex items-start justify-between gap-2"><b>{row.name || '(missing product name)'}</b><span className={rowHasError(row) ? 'text-red-400' : 'text-lime-400'}>{rowHasError(row) ? 'Needs correction' : 'Ready'}</span></div>
           <p className="mt-1 text-zinc-400">{row.storeName} · Normal {row.normalPrice == null ? '—' : `R${row.normalPrice.toFixed(2)}`} · Promo {row.promoPrice == null ? '—' : `R${row.promoPrice.toFixed(2)}`}</p>
           {row.promoOffer && <p className="mt-1 text-sky-300">Flyer offer: {row.promoOffer}</p>}
+          {row.multiBuyQuantity != null && row.multiBuyPrice != null && <p className="mt-1 font-medium text-emerald-300">Multi-buy: {row.multiBuyQuantity} items for R{row.multiBuyPrice.toFixed(2)} · R{(row.multiBuyPrice / row.multiBuyQuantity).toFixed(2)} per item</p>}
+          {row.singleItemPrice != null && <p className="mt-1 text-lime-300">Single-item price: R{row.singleItemPrice.toFixed(2)}</p>}
           {row.notes && <p className="mt-1 text-zinc-400">Notes: {row.notes}</p>}
           {row.issues.map((issue, i) => <p key={i} className={issue.severity === 'error' ? 'mt-1 text-red-400' : 'mt-1 text-amber-300'}>{issue.severity.toUpperCase()}: {issue.message}</p>)}
         </div>)}
@@ -492,13 +497,13 @@ export function LocalCatalogueImport() {
 
     {summary && <section className="rounded-2xl border border-lime-800 bg-lime-950/30 p-4 text-sm">
       <h3 className="font-bold text-lime-300">Saved in this browser</h3>
-      <p className="mt-2 text-xs text-zinc-300">{summary.rowsProcessed} rows · {summary.productsCreated} new products · {summary.productsUpdated} existing products updated · {summary.pricesUpserted} store prices · {summary.promosCreated} new promotions</p>
+      <p className="mt-2 text-xs text-zinc-300">{summary.rowsProcessed} rows · {summary.productsCreated} new products · {summary.productsUpdated} existing products updated · {summary.pricesUpserted} single-item prices · {summary.promosCreated} single-item promotions · {summary.multiBuyPromosCreated} multi-buy offers</p>
     </section>}
 
     <section className="rounded-2xl border border-zinc-800 bg-zinc-900 p-5 space-y-2">
       <h3 className="font-bold text-sm">Export approved catalogue</h3>
       <p className="text-xs text-zinc-400">Download the merged catalogue snapshots after importing. These files are for a separate, reviewed repository update; this button does not deploy or publish anything.</p>
-      <div className="flex flex-wrap gap-2"><Button variant="outline" onClick={() => exportCatalogueFile('products')} className="border-zinc-700 text-zinc-200"><Download className="mr-2 h-4 w-4" /> Export products.json</Button><Button variant="outline" onClick={() => exportCatalogueFile('promos')} className="border-zinc-700 text-zinc-200"><Download className="mr-2 h-4 w-4" /> Export promos.json</Button></div>
+      <div className="flex flex-wrap gap-2"><Button variant="outline" onClick={() => exportCatalogueFile('products')} className="border-zinc-700 text-zinc-200"><Download className="mr-2 h-4 w-4" /> Export products.json</Button><Button variant="outline" onClick={() => exportCatalogueFile('promos')} className="border-zinc-700 text-zinc-200"><Download className="mr-2 h-4 w-4" /> Export promos.json</Button><Button variant="outline" onClick={() => exportCatalogueFile('multiBuyPromos')} className="border-zinc-700 text-zinc-200"><Download className="mr-2 h-4 w-4" /> Export multi-buy-promos.json</Button></div>
     </section>
   </div>
 }
