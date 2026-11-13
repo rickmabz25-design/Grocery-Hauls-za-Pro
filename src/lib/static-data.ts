@@ -421,7 +421,7 @@ export async function handleStaticApi(method: string, path: string, body: AnyRec
         new Date(p.startDate) <= new Date() && new Date(p.endDate) >= new Date()).sort((a, b) => a.promoPrice - b.promoPrice)[0] : null
       const shelf = body?.price == null ? (promo?.promoPrice ?? product?.storePrices?.[session.storeId]) : Number(body.price)
       if (shelf != null && (!Number.isFinite(Number(shelf)) || Number(shelf) < 0)) fail('Enter a valid shelf price')
-      const item = { id: id(), productId: product?.id ?? null, name: name.slice(0, 80), price: Number(shelf ?? 0),
+      const item = { id: id(), productId: product?.id ?? null, name: name.slice(0, 80), unit: product?.unit ?? (body?.unit == null ? null : String(body.unit).trim().slice(0, 40) || null), price: Number(shelf ?? 0),
         promoPrice: promo?.promoPrice ?? null, quantity: Math.max(1, Math.min(99, number(body?.quantity, 1))),
         bought: false, source: body?.source ?? (product ? 'scan' : 'manual') }
       session.items.push(item); save()
