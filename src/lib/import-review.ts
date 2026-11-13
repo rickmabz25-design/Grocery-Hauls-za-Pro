@@ -108,7 +108,7 @@ export function autoMap(headers: string[]): ImportColumnMap {
   return {
     name: pick([/^product(name|description)?$/, /^item(name|description)?$/, /^description$/, /^name$/]),
     store: pick([/^store(name)?$/, /^retailer$/, /^merchant$/]),
-    unit: pick([/^unit$/, /^size$/, /^pack(age)?$/, /^weight$/, /^volume$/]),
+    unit: pick([/^unit$/, /^size$/, /^pack(age)?$/, /^weight$/, /^volume$/, /^description$/]),
     normalPrice: pick([/^normal(price)?$/, /^regular(price)?$/, /^was(price)?$/, /^old(price)?$/, /^rrp$/]),
     promoPrice: pick([/^promo(price)?$/, /^special(price)?$/, /^selling(price)?$/, /^now(price)?$/, /^deal(price)?$/]),
     promoOffer: pick([/^(?:price)?offer$/, /^promotionoffer$/, /^dealdescription$/, /^offertext$/, /^specialoffer$/]),
@@ -133,7 +133,7 @@ export function buildReviewRows(
     const unit = text(mapping.unit ? raw[mapping.unit] : '')
     const normalPrice = parsePrice(mapping.normalPrice ? raw[mapping.normalPrice] : null)
     const promoOffer = text(mapping.promoOffer ? raw[mapping.promoOffer] : '')
-    const multiBuyOffer = /\\bBUY\\s+(?:\\d+|ONE|TWO|THREE|FOUR|FIVE|SIX|SEVEN|EIGHT|NINE|TEN)\\b|\\b(?:\\d+|two|three|four|five|six|seven|eight|nine|ten)\\s+FOR\\s+R?\\s*\\d/i.test(promoOffer)
+    const multiBuyOffer = /\bBUY\s+(?:\d+|ONE|TWO|THREE|FOUR|FIVE|SIX|SEVEN|EIGHT|NINE|TEN)\b|\b(?:\d+|two|three|four|five|six|seven|eight|nine|ten)\s+FOR\s+R?\s*\d/i.test(promoOffer)
     const promoPrice = parsePrice(mapping.promoPrice ? raw[mapping.promoPrice] : null) ?? (!multiBuyOffer && promoOffer ? parsePrice(promoOffer) : null)
     const startDate = parseDate(mapping.startDate ? raw[mapping.startDate] : null) || context.defaultStart || null
     const endDate = parseDate(mapping.endDate ? raw[mapping.endDate] : null) || context.defaultEnd || null
