@@ -16,6 +16,8 @@ export type ImportReviewRow = {
   unit: string
   normalPrice: number | null
   promoPrice: number | null
+  promoOffer: string
+  multiBuyOffer: boolean
   startDate: string | null
   endDate: string | null
   issues: ImportIssue[]
@@ -28,6 +30,7 @@ export type ImportColumnMap = {
   unit?: string
   normalPrice?: string
   promoPrice?: string
+  promoOffer?: string
   startDate?: string
   endDate?: string
 }
@@ -108,6 +111,7 @@ export function autoMap(headers: string[]): ImportColumnMap {
     unit: pick([/^unit$/, /^size$/, /^pack(age)?$/, /^weight$/, /^volume$/]),
     normalPrice: pick([/^normal(price)?$/, /^regular(price)?$/, /^was(price)?$/, /^old(price)?$/, /^rrp$/]),
     promoPrice: pick([/^promo(price)?$/, /^special(price)?$/, /^selling(price)?$/, /^now(price)?$/, /^deal(price)?$/]),
+    promoOffer: pick([/^(?:price)?offer$/, /^promotionoffer$/, /^dealdescription$/, /^offertext$/, /^specialoffer$/]),
     startDate: pick([/^start(date)?$/, /^valid(from|fromdate)?$/, /^from(date)?$/, /^datefrom$/]),
     endDate: pick([/^end(date)?$/, /^valid(to|todate)?$/, /^to(date)?$/, /^dateto$/, /^expiry(date)?$/]),
   }
@@ -128,14 +132,17 @@ export function buildReviewRows(
     const storeName = text(mapping.store ? raw[mapping.store] : '') || text(context.defaultStoreName)
     const unit = text(mapping.unit ? raw[mapping.unit] : '')
     const normalPrice = parsePrice(mapping.normalPrice ? raw[mapping.normalPrice] : null)
-    const promoPrice = parsePrice(mapping.promoPrice ? raw[mapping.promoPrice] : null)
+    const promoOffer = text(mapping.promoOffer ? raw[mapping.promoOffer] : '')
+    const multiBuyOffer = /\\bBUY\\s+(?:\\d+|ONE|TWO|THREE|FOUR|FIVE|SIX|SEVEN|EIGHT|NINE|TEN)\\b|\\b(?:\\d+|two|three|four|five|six|seven|eight|nine|ten)\\s+FOR\\s+R?\\s*\\d/i.test(promoOffer)
+    const promoPrice = parsePrice(mapping.promoPrice ? raw[mapping.promoPrice] : null) ?? (!multiBuyOffer && promoOffer ? parsePrice(promoOffer) : null)
     const startDate = parseDate(mapping.startDate ? raw[mapping.startDate] : null) || context.defaultStart || null
     const endDate = parseDate(mapping.endDate ? raw[mapping.endDate] : null) || context.defaultEnd || null
     const issues: ImportIssue[] = []
     const add = (code: string, message: string, severity: 'error' | 'warning' = 'error') => issues.push({ code, message, severity })
 
     if (!name) add('missing-name', 'Product name is required')
-    if (normalPrice == null && promoPrice == null) add('missing-price', 'Enter a normal price or a promotion price')
+    if (normalPrice == null && promoPrice == null && !multiBuyOffer) add('missing-price', 'Enter a normal price or a single-item promotion price')
+    if (multiBuyOffer) add('multi-buy-review', 'Multi-buy offer detected. It is preserved for review but must not be imported as a single-item price until multi-buy support is added.')
     if (normalPrice != null && promoPrice != null && promoPrice >= normalPrice)
       add('promo-not-lower', 'Promotion price must be lower than the normal price')
     if (promoPrice == null && normalPrice != null)
@@ -149,7 +156,7 @@ export function buildReviewRows(
       if (context.publishedKeys?.has(key))
         add('duplicate-published', 'This product/store already exists in the published catalogue', 'warning')
     }
-    return { sourceIndex: index, name, storeName, unit, normalPrice, promoPrice, startDate, endDate, issues, raw }
+    return { sourceIndex: index, name, storeName, unit, normalPrice, promoPrice, promoOffer, multiBuyOffer, startDate, endDate, issues, raw }
   })
 }
 
