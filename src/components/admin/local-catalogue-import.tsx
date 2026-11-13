@@ -18,6 +18,7 @@ type FlyerCandidate = { id: number; name: string; normalPrice: string; promoPric
 const fields = [
   ['name', 'Product name *'], ['store', 'Store (optional if default selected)'],
   ['unit', 'Size / pack'], ['normalPrice', 'Normal price'], ['promoPrice', 'Promo price'],
+  ['promoOffer', 'Promotion offer / multi-buy text'],
   ['startDate', 'Promotion start'], ['endDate', 'Promotion end'],
   ['category', 'Category'], ['barcode', 'Barcode'], ['brand', 'Brand'],
 ] as const
@@ -41,8 +42,8 @@ export function LocalCatalogueImport() {
   const [flyerUrl, setFlyerUrl] = useState('')
   const [flyerPreviewUrl, setFlyerPreviewUrl] = useState('')
   const [flyerImageError, setFlyerImageError] = useState(false)
-  const [flyerStartDate, setFlyerStartDate] = useState('2026-10-22')
-  const [flyerEndDate, setFlyerEndDate] = useState('2026-11-08')
+  const [flyerStartDate, setFlyerStartDate] = useState('')
+  const [flyerEndDate, setFlyerEndDate] = useState('')
   const [flyerOcrBusy, setFlyerOcrBusy] = useState(false)
   const [flyerOcrStatus, setFlyerOcrStatus] = useState('')
   const [flyerOcrText, setFlyerOcrText] = useState('')
@@ -106,7 +107,12 @@ export function LocalCatalogueImport() {
         const found = extra(key, patterns)
         if (found) auto[key] = found
       }
-      setFile({ headers, records, name: selected.name })
+      const dateRange = selected.name.match(/(\\d{2})-(\\d{2})-(\\d{4}).*?(\\d{2})-(\\d{2})-(\\d{4})/)
+      const defaultStart = dateRange ? `${dateRange[3]}-${dateRange[2]}-${dateRange[1]}` : undefined
+      const defaultEnd = dateRange ? `${dateRange[6]}-${dateRange[5]}-${dateRange[4]}` : undefined
+      setFile({ headers, records, name: selected.name, defaultStart, defaultEnd })
+      if (defaultStart) setFlyerStartDate(defaultStart)
+      if (defaultEnd) setFlyerEndDate(defaultEnd)
       setMapping(auto)
       toast({ title: 'File read successfully', description: `${records.length} data rows found in ${selected.name}.` })
     } catch (error) {
@@ -290,7 +296,7 @@ export function LocalCatalogueImport() {
     if (!file) return
     const coreMap = {
       name: mapping.name, store: mapping.store, unit: mapping.unit,
-      normalPrice: mapping.normalPrice, promoPrice: mapping.promoPrice,
+      normalPrice: mapping.normalPrice, promoPrice: mapping.promoPrice, promoOffer: mapping.promoOffer,
       startDate: mapping.startDate, endDate: mapping.endDate,
     }
     const storeName = stores.find(s => s.id === defaultStore)?.name
@@ -299,9 +305,6 @@ export function LocalCatalogueImport() {
       const issues = [...row.issues]
       if (!row.storeName || !stores.some(s => s.name.toLowerCase() === row.storeName.toLowerCase())) {
         issues.push({ code: 'unknown-store', message: `Store “${row.storeName || '(blank)'}” is not in the store catalogue`, severity: 'error' as const })
-      }
-      if (row.promoPrice != null && row.normalPrice == null) {
-        issues.push({ code: 'promo-normal-required', message: 'Promotion rows need a normal price as well as the promo price', severity: 'error' as const })
       }
       if (row.promoPrice != null && (!row.startDate || !row.endDate)) {
         issues.push({ code: 'promo-dates-required', message: 'Promotion rows need valid start and end dates', severity: 'error' as const })
@@ -478,6 +481,7 @@ export function LocalCatalogueImport() {
         {rows.map(row => <div key={row.sourceIndex} className="rounded-lg border border-zinc-800 p-3 text-xs">
           <div className="flex items-start justify-between gap-2"><b>{row.name || '(missing product name)'}</b><span className={rowHasError(row) ? 'text-red-400' : 'text-lime-400'}>{rowHasError(row) ? 'Needs correction' : 'Ready'}</span></div>
           <p className="mt-1 text-zinc-400">{row.storeName} · Normal {row.normalPrice == null ? '—' : `R${row.normalPrice.toFixed(2)}`} · Promo {row.promoPrice == null ? '—' : `R${row.promoPrice.toFixed(2)}`}</p>
+          {row.promoOffer && <p className="mt-1 text-sky-300">Flyer offer: {row.promoOffer}</p>}
           {row.issues.map((issue, i) => <p key={i} className={issue.severity === 'error' ? 'mt-1 text-red-400' : 'mt-1 text-amber-300'}>{issue.severity.toUpperCase()}: {issue.message}</p>)}
         </div>)}
       </div>
