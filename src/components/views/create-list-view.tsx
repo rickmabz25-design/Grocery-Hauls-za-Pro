@@ -99,25 +99,6 @@ export function CreateListView() {
     if (listId) loadList(listId)
   }, [listId, loadList])
 
-  // Auto-create list when arriving with promo products to pre-add
-  useEffect(() => {
-    const boot = async () => {
-      if (preAddPromoIds.length > 0 && !listId) {
-        try {
-          const { list } = await apiPost<{ list: { id: string } }>('/api/lists', { name: 'New List' })
-          for (const pid of preAddPromoIds) {
-            await apiPost(`/api/lists/${list.id}/items`, { productId: pid, quantity: 1, source: 'promo' })
-          }
-          setPreAdd([])
-          setListId(list.id)
-        } catch (e) {
-          toast({ title: 'Could not start list', description: (e as Error).message, variant: 'destructive' })
-        }
-      }
-    }
-    boot()
-  }, [preAddPromoIds, listId, setPreAdd])
-
   // Search with debounce; category browse
   useEffect(() => {
     if (manualSearchTimer.current) clearTimeout(manualSearchTimer.current)
@@ -152,8 +133,14 @@ export function CreateListView() {
     }
     try {
       const { list } = await apiPost<{ list: { id: string; name: string } }>('/api/lists', { name })
+      // Promo shortcuts are added only after the user has named and created the list.
+      for (const productId of preAddPromoIds) {
+        await apiPost(`/api/lists/${list.id}/items`, { productId, quantity: 1, source: 'promo' })
+      }
+      if (preAddPromoIds.length) setPreAdd([])
       setListId(list.id)
       setListName(list.name)
+      await loadList(list.id)
       toast({ title: 'List created', description: list.name })
     } catch (e) {
       toast({ title: 'Could not create list', description: (e as Error).message, variant: 'destructive' })
