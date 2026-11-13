@@ -90,6 +90,11 @@ export function MyListsView() {
         localStorage.setItem('gh_shopping_mode', shoppingMode)
       } catch { /* ignore */ }
       const { list } = await apiPost<{ list: { id: string; name: string } }>('/api/lists', { name: newName.trim() })
+      try {
+        const contexts = JSON.parse(localStorage.getItem('gh_list_context') || '{}')
+        contexts[list.id] = { province, shoppingMode, preferredStoreId, preferredStoreLabel: (shoppingMode === 'online' ? ONLINE_RETAILERS : stores).find((s) => s.id === preferredStoreId)?.name || '' }
+        localStorage.setItem('gh_list_context', JSON.stringify(contexts))
+      } catch { /* ignore */ }
       setCreateOpen(false)
       setNewName('')
       openList(list.id, list.name)
