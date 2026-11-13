@@ -61,7 +61,7 @@ export const useApp = create<AppState>((set) => ({
       view,
       isAdminArea: view === 'admin',
       // reset list context when leaving list-scoped views
-      ...(s.view !== view && !['list-detail', 'compare', 'split'].includes(view)
+      ...(s.view !== view && !['list-detail', 'compare', 'split'].includes(view) && !(view === 'create' && s.view === 'list-detail')
         ? { activeListId: null, activeListName: '' }
         : {}),
     })),
