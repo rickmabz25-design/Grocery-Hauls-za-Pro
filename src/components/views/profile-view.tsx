@@ -183,7 +183,7 @@ export function ProfileView() {
       {/* App branding */}
       <div className="flex flex-col items-center mt-6 mb-2">
         <img
-          src="/brand/logo-lockup.png"
+          src="/brand/groceryhaulz-logo.svg"
           alt="GroceryHaulz-Pro za"
           className="w-36 opacity-95"
         />
