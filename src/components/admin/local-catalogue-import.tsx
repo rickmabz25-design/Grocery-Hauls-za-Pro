@@ -341,6 +341,15 @@ export function LocalCatalogueImport() {
     }
   }
 
+  const downloadImportTemplate = () => {
+    const csv = [
+      'product_name,store,size,normal_price,promo_price,promo_start,promo_end,category,barcode,brand',
+      '"Example long-life milk","Checkers","1L","18.99","15.99","2026-11-01","2026-11-14","Dairy","","Example Brand"',
+    ].join('\\n')
+    const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }))
+    const link = document.createElement('a'); link.href = url; link.download = 'groceryhaulz-import-template.csv'; link.click(); URL.revokeObjectURL(url)
+  }
+
   const exportCatalogueFile = async (kind: 'products' | 'promos') => {
     try {
       const snapshot = await exportLocalCatalogueSnapshot()
@@ -356,6 +365,10 @@ export function LocalCatalogueImport() {
     <section className="rounded-2xl border border-zinc-800 bg-zinc-900 p-5 space-y-3">
       <div className="flex items-center gap-2"><FileSpreadsheet className="h-5 w-5 text-sky-400" /><h2 className="font-bold text-sm">Local catalogue import</h2></div>
       <p className="text-xs leading-relaxed text-zinc-400">CSV and Excel files are read inside this browser. Nothing is uploaded and nothing changes in the live catalogue. Choose a default retailer for rows without a store column.</p>
+      <div className="flex flex-wrap items-center gap-2">
+        <Button type="button" variant="outline" onClick={downloadImportTemplate} className="border-zinc-700 text-zinc-200"><Download className="mr-2 h-4 w-4" /> Download import template</Button>
+        <span className="text-[10px] text-zinc-500">One product per row · Excel or CSV · review before saving</span>
+      </div>
       <label className="block text-[10px] font-bold uppercase text-zinc-400">Default retailer</label>
       <select value={defaultStore} onChange={e => setDefaultStore(e.target.value)} className="w-full rounded-lg border border-zinc-700 bg-zinc-800 p-2.5 text-sm text-white">
         {stores.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
