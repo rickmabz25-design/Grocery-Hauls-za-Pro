@@ -19,6 +19,9 @@ export type ImportReviewRow = {
   promoOffer: string
   notes: string
   multiBuyOffer: boolean
+  multiBuyQuantity: number | null
+  multiBuyPrice: number | null
+  singleItemPrice: number | null
   startDate: string | null
   endDate: string | null
   issues: ImportIssue[]
@@ -120,6 +123,23 @@ export function autoMap(headers: string[]): ImportColumnMap {
   }
 }
 
+const numberWords: Record<string, number> = { one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9, ten: 10 }
+
+export function parseMultiBuyOffer(value: unknown): { quantity: number; bundlePrice: number } | null {
+  const raw = text(value).replace(/,/g, '.')
+  const match = raw.match(/\b(?:BUY\s+)?(\d+|one|two|three|four|five|six|seven|eight|nine|ten)\s+(?:FOR\s+)?R?\s*(\d+(?:\.\d{1,2})?)\b/i)
+  if (!match) return null
+  const quantity = Number(match[1]) || numberWords[match[1].toLowerCase()]
+  const bundlePrice = parsePrice(match[2])
+  return quantity > 0 && bundlePrice != null ? { quantity, bundlePrice } : null
+}
+
+export function parseSingleItemPrice(value: unknown): number | null {
+  const raw = text(value)
+  const match = raw.match(/\bsingle(?:\s+item)?(?:\s+price)?\s*[:=-]?\s*R?\s*(\d+(?:[.,]\d{1,2})?)/i)
+  return match ? parsePrice(match[1]) : null
+}
+
 export function rowHasError(row: Pick<ImportReviewRow, 'issues'>): boolean {
   return row.issues.some((issue) => issue.severity === 'error')
 }
@@ -137,16 +157,19 @@ export function buildReviewRows(
     const normalPrice = parsePrice(mapping.normalPrice ? raw[mapping.normalPrice] : null)
     const promoOffer = text(mapping.promoOffer ? raw[mapping.promoOffer] : '')
     const notes = text(mapping.notes ? raw[mapping.notes] : '')
-    const multiBuyOffer = /\bBUY\s+(?:\d+|ONE|TWO|THREE|FOUR|FIVE|SIX|SEVEN|EIGHT|NINE|TEN)\b|\b(?:\d+|two|three|four|five|six|seven|eight|nine|ten)\s+FOR\s+R?\s*\d/i.test(promoOffer)
-    const promoPrice = parsePrice(mapping.promoPrice ? raw[mapping.promoPrice] : null) ?? (!multiBuyOffer && promoOffer ? parsePrice(promoOffer) : null)
+    const multiBuy = parseMultiBuyOffer(promoOffer)
+    const multiBuyOffer = /\bBUY\s+(?:\d+|ONE|TWO|THREE|FOUR|FIVE|SIX|SEVEN|EIGHT|NINE|TEN)\b|\b(?:\d+|one|two|three|four|five|six|seven|eight|nine|ten)\s+FOR\s+R?\s*\d/i.test(promoOffer)
+    const singleItemPrice = parseSingleItemPrice(notes)
+    const explicitPromoPrice = parsePrice(mapping.promoPrice ? raw[mapping.promoPrice] : null)
+    const promoPrice = explicitPromoPrice ?? (multiBuyOffer ? singleItemPrice : (promoOffer ? parsePrice(promoOffer) : null))
     const startDate = parseDate(mapping.startDate ? raw[mapping.startDate] : null) || context.defaultStart || null
     const endDate = parseDate(mapping.endDate ? raw[mapping.endDate] : null) || context.defaultEnd || null
     const issues: ImportIssue[] = []
     const add = (code: string, message: string, severity: 'error' | 'warning' = 'error') => issues.push({ code, message, severity })
 
     if (!name) add('missing-name', 'Product name is required')
-    if (normalPrice == null && promoPrice == null && !multiBuyOffer) add('missing-price', 'Enter a normal price or a single-item promotion price')
-    if (multiBuyOffer) add('multi-buy-review', 'Multi-buy offer detected. It is preserved for review but must not be imported as a single-item price until multi-buy support is added.')
+    if (normalPrice == null && promoPrice == null && !multiBuy) add('missing-price', 'Enter a normal price, a single-item promotion price, or a complete multi-buy offer')
+    if (multiBuyOffer && !multiBuy) add('multi-buy-details', 'Multi-buy wording was found, but its quantity or bundle price could not be read. Correct the offer before saving')
     if (normalPrice != null && promoPrice != null && promoPrice >= normalPrice)
       add('promo-not-lower', 'Promotion price must be lower than the normal price')
     if (promoPrice == null && normalPrice != null)
@@ -160,7 +183,7 @@ export function buildReviewRows(
       if (context.publishedKeys?.has(key))
         add('duplicate-published', 'This product/store already exists in the published catalogue', 'warning')
     }
-    return { sourceIndex: index, name, storeName, unit, normalPrice, promoPrice, promoOffer, notes, multiBuyOffer, startDate, endDate, issues, raw }
+    return { sourceIndex: index, name, storeName, unit, normalPrice, promoPrice, promoOffer, notes, multiBuyOffer, multiBuyQuantity: multiBuy?.quantity ?? null, multiBuyPrice: multiBuy?.bundlePrice ?? null, singleItemPrice, startDate, endDate, issues, raw }
   })
 }
 
@@ -168,6 +191,7 @@ export function reviewSummary(rows: ImportReviewRow[]) {
   return {
     total: rows.length,
     promoRows: rows.filter((row) => !rowHasError(row) && row.promoPrice != null).length,
+    multiBuyRows: rows.filter((row) => !rowHasError(row) && row.multiBuyQuantity != null && row.multiBuyPrice != null).length,
     priceOnly: rows.filter((row) => !rowHasError(row) && row.promoPrice == null && row.normalPrice != null).length,
     errors: rows.filter(rowHasError).length,
     warnings: rows.filter((row) => !rowHasError(row) && row.issues.some((issue) => issue.severity === 'warning')).length,
