@@ -121,3 +121,10 @@
     @apply bg-background text-foreground;
   }
 }
+
+
+@keyframes gh-pulse { 0%,100% { transform:scale(1); box-shadow:0 8px 24px rgb(132 204 22 / .28),0 0 0 0 rgb(190 242 100 / .5); } 50% { transform:scale(1.035); box-shadow:0 10px 30px rgb(132 204 22 / .4),0 0 0 10px rgb(190 242 100 / 0); } }
+@keyframes gh-shimmer { 0% { background-position:0% 50%; } 100% { background-position:200% 50%; } }
+.whats-new-pulse { animation: gh-pulse 2.4s ease-in-out infinite; }
+.whats-new-banner { background-size:200% 200%; animation:gh-shimmer 7s ease-in-out infinite alternate; }
+@media (prefers-reduced-motion: reduce) { .whats-new-pulse,.whats-new-banner { animation:none; } }
