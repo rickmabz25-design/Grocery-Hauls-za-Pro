@@ -68,7 +68,7 @@ function readCatalogueOverrides(): CatalogueOverrides {
       multiBuyPromos: Array.isArray(parsed.multiBuyPromos) ? parsed.multiBuyPromos : [],
     }
   } catch {
-    return { products: [], promos: [] }
+    return { products: [], promos: [], multiBuyPromos: [] }
   }
 }
 
