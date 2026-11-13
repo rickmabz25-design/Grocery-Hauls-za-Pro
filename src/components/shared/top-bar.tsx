@@ -19,40 +19,85 @@ export function TopBar() {
         const data = await apiGet<{ unread: number }>('/api/notifications')
         if (!cancelled) setUnread(data.unread)
       } catch {
-        /* ignore */
+        /* Notifications are optional in local-only mode. */
       }
     }
     load()
-    const t = setInterval(load, 60_000)
-    const nav = [
-    ['home', 'Overview'], ['specials', 'Specials'], ['create', 'Create a new list'],
-    ['lists', 'My lists'], ['shop', 'Shop mode'], ['whatsnew', "What's new"], ['profile', 'Profile'],
+    const timer = window.setInterval(load, 60_000)
+    return () => {
+      cancelled = true
+      window.clearInterval(timer)
+    }
+  }, [])
+
+  const nav = [
+    ['home', 'Overview'],
+    ['specials', 'Specials'],
+    ['create', 'Create a new list'],
+    ['lists', 'My lists'],
+    ['shop', 'Shop mode'],
+    ['whatsnew', "What's new"],
+    ['profile', 'Profile'],
   ] as const
 
   return (
-    <header className="sticky top-0 z-40 bg-[#f7f9f7] text-slate-700 border-b border-slate-200">
+    <header className="sticky top-0 z-40 border-b border-slate-200 bg-[#f7f9f7] text-slate-700">
       <div className="relative flex h-[68px] items-center justify-between px-4">
-        <button onClick={() => setMenuOpen(value => !value)} className="rounded-xl p-2 hover:bg-slate-200/70" aria-label={menuOpen ? 'Close navigation menu' : 'Open navigation menu'}>
+        <button
+          onClick={() => setMenuOpen((value) => !value)}
+          className="rounded-xl p-2 hover:bg-slate-200/70"
+          aria-label={menuOpen ? 'Close navigation menu' : 'Open navigation menu'}
+        >
           {menuOpen ? <X className="h-6 w-6" /> : <Menu className="h-6 w-6" />}
         </button>
-        <span className="absolute left-1/2 -translate-x-1/2 font-semibold text-[17px] tracking-tight">Overview</span>
+        <span className="absolute left-1/2 -translate-x-1/2 text-[17px] font-semibold tracking-tight">
+          Overview
+        </span>
         <div className="flex items-center gap-3">
-          <button onClick={() => go('notifications')} className="relative rounded-xl p-2 hover:bg-slate-200/70" aria-label={`Notifications${unread ? `, ${unread} unread` : ''}`}>
+          <button
+            onClick={() => go('notifications')}
+            className="relative rounded-xl p-2 hover:bg-slate-200/70"
+            aria-label={`Notifications${unread ? `, ${unread} unread` : ''}`}
+          >
             <Bell className="h-6 w-6" />
-            {unread > 0 && <span className="absolute right-1 top-1 h-2 w-2 rounded-full bg-red-500 ring-2 ring-[#f7f9f7]" />}
+            {unread > 0 && (
+              <span className="absolute right-1 top-1 h-2 w-2 rounded-full bg-red-500 ring-2 ring-[#f7f9f7]" />
+            )}
           </button>
-          <button onClick={() => go('profile')} className="h-11 w-11 rounded-full bg-amber-300 text-amber-950 font-extrabold text-sm overflow-hidden flex items-center justify-center" aria-label="Profile">
-            {user?.image ? <img src={user.image} alt={`${user.name} profile`} className="h-full w-full object-cover" /> : initialsOf(user?.name || 'U')}
+          <button
+            onClick={() => go('profile')}
+            className="flex h-11 w-11 items-center justify-center overflow-hidden rounded-full bg-amber-300 text-sm font-extrabold text-amber-950"
+            aria-label="Profile"
+          >
+            {user?.image ? (
+              <img src={user.image} alt={`${user.name} profile`} className="h-full w-full object-cover" />
+            ) : (
+              initialsOf(user?.name || 'U')
+            )}
           </button>
-          <button onClick={() => go('profile')} aria-label="Open profile" className="text-xl leading-none">›</button>
+          <button onClick={() => go('profile')} aria-label="Open profile" className="text-xl leading-none">
+            ›
+          </button>
         </div>
       </div>
-      {menuOpen && <nav className="absolute left-3 top-[60px] z-50 w-64 rounded-2xl border border-slate-200 bg-white p-2 shadow-xl">
-        {nav.map(([view, label]) => <button key={view} onClick={() => { go(view); setMenuOpen(false) }} className="block w-full rounded-xl px-3 py-3 text-left text-sm font-semibold text-slate-700 hover:bg-lime-50 hover:text-slate-950">{label}</button>)}
-      </nav>}
+      {menuOpen && (
+        <nav className="absolute left-3 top-[60px] z-50 w-64 rounded-2xl border border-slate-200 bg-white p-2 shadow-xl">
+          {nav.map(([view, label]) => (
+            <button
+              key={view}
+              onClick={() => {
+                go(view)
+                setMenuOpen(false)
+              }}
+              className="block w-full rounded-xl px-3 py-3 text-left text-sm font-semibold text-slate-700 hover:bg-lime-50 hover:text-slate-950"
+            >
+              {label}
+            </button>
+          ))}
+        </nav>
+      )}
     </header>
   )
-
 }
 
 export async function markAllNotificationsRead() {
