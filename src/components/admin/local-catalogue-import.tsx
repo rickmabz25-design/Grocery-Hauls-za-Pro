@@ -107,7 +107,7 @@ export function LocalCatalogueImport() {
         const found = extra(key, patterns)
         if (found) auto[key] = found
       }
-      const dateRange = selected.name.match(/(\\d{2})-(\\d{2})-(\\d{4}).*?(\\d{2})-(\\d{2})-(\\d{4})/)
+      const dateRange = selected.name.match(/(\d{2})-(\d{2})-(\d{4}).*?(\d{2})-(\d{2})-(\d{4})/)
       const defaultStart = dateRange ? `${dateRange[3]}-${dateRange[2]}-${dateRange[1]}` : undefined
       const defaultEnd = dateRange ? `${dateRange[6]}-${dateRange[5]}-${dateRange[4]}` : undefined
       setFile({ headers, records, name: selected.name, defaultStart, defaultEnd })
