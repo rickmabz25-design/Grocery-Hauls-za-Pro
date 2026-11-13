@@ -1,10 +1,12 @@
 'use client'
 
 import { useCallback, useEffect, useState } from 'react'
-import { apiGet, apiPost, apiPatch, apiDelete, apiUpload } from '@/lib/api'
+import { apiGet, apiPost, apiPatch, apiDelete, apiUpload, STATIC_MODE } from '@/lib/api'
+import { LocalCatalogueImport } from '@/components/admin/local-catalogue-import'
 import { toast } from '@/hooks/use-toast'
 import { formatZAR, formatShortDate } from '@/lib/format'
 import { ADMIN_EMAIL_PRIMARY } from '@/lib/constants'
+import { useApp } from '@/lib/store'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
@@ -29,14 +31,28 @@ const tabs: { key: AdminTab; label: string; icon: React.ComponentType<{ classNam
 export function AdminView() {
   const [admin, setAdmin] = useState<{ email: string } | null>(null)
   const [checking, setChecking] = useState(true)
-  const [tab, setTab] = useState<AdminTab>('overview')
+  const [tab, setTab] = useState<AdminTab>('import')
+  const currentUser = useApp((s) => s.user)
 
   useEffect(() => {
+    if (STATIC_MODE) {
+      // The profile's user is already populated from the verified Firebase
+      // sign-in before the admin button can be opened. Use that same session
+      // state here; a second Firebase listener can emit its initial null
+      // value during persistence restoration and incorrectly deny access.
+      const email = currentUser?.email?.trim() ?? ''
+      setAdmin(email.toLowerCase() === ADMIN_EMAIL_PRIMARY.trim().toLowerCase()
+        ? { email }
+        : null)
+      setChecking(false)
+      return
+    }
+
     apiGet<{ admin: { email: string } | null }>('/api/admin/login')
       .then((d) => setAdmin(d.admin))
       .catch(() => setAdmin(null))
       .finally(() => setChecking(false))
-  }, [])
+  }, [currentUser?.email])
 
   const exitAdmin = () => {
     window.location.hash = ''
@@ -48,6 +64,7 @@ export function AdminView() {
   }
 
   if (!admin) {
+    if (STATIC_MODE) return <div className="min-h-screen bg-zinc-950 flex flex-col items-center justify-center gap-3 px-5 text-center text-zinc-200"><h1 className="text-lg font-bold">Local admin access restricted</h1><p className="max-w-sm text-sm text-zinc-400">Sign in with the approved Google account ({ADMIN_EMAIL_PRIMARY}) to use the browser-local catalogue tools.</p><Button onClick={exitAdmin} variant="outline">Back to app</Button></div>
     return <AdminLogin onLogin={(email) => setAdmin({ email })} onExit={exitAdmin} />
   }
 
@@ -57,7 +74,7 @@ export function AdminView() {
       <header className="bg-zinc-900 border-b border-zinc-800 px-4 py-3 flex items-center justify-between sticky top-0 z-30">
         <div className="flex items-center gap-2.5">
           <img
-            src="/brand/logo-tile.png"
+            src="/brand/groceryhaulz-mark.svg"
             alt="Grocery Hauls Pro za logo"
             className="h-9 w-9 rounded-[10px] shadow-sm shrink-0"
           />
@@ -70,7 +87,7 @@ export function AdminView() {
           <Button variant="outline" size="sm" className="border-zinc-700 text-zinc-300 hover:bg-zinc-800" onClick={exitAdmin}>
             <ArrowLeft className="h-4 w-4 mr-1" /> App
           </Button>
-          <Button
+          {!STATIC_MODE && <Button
             variant="outline"
             size="sm"
             className="border-zinc-700 text-zinc-300 hover:bg-zinc-800"
@@ -80,14 +97,14 @@ export function AdminView() {
             }}
           >
             <LogOut className="h-4 w-4 mr-1" /> Exit
-          </Button>
+          </Button>}
         </div>
       </header>
 
       {/* Tabs */}
       <div className="bg-zinc-900/60 border-b border-zinc-800 px-3 py-2 sticky top-[57px] z-20">
         <div className="max-w-5xl mx-auto flex gap-1.5 overflow-x-auto">
-          {tabs.map((t) => {
+          {(STATIC_MODE ? tabs.filter((t) => t.key === 'import' || t.key === 'whatsnew') : tabs).map((t) => {
             const Icon = t.icon
             return (
               <button
@@ -107,7 +124,7 @@ export function AdminView() {
       <main className="flex-1 max-w-5xl w-full mx-auto px-4 py-5">
         {tab === 'overview' && <OverviewTab />}
         {tab === 'users' && <UsersTab />}
-        {tab === 'import' && <ImportTab />}
+        {tab === 'import' && (STATIC_MODE ? <LocalCatalogueImport /> : <ImportTab />)}
         {tab === 'promotions' && <PromotionsTab />}
         {tab === 'whatsnew' && <WhatsNewTab />}
         {tab === 'files' && <FilesTab />}
@@ -142,7 +159,7 @@ function AdminLogin({ onLogin, onExit }: { onLogin: (email: string) => void; onE
       <div className="w-full max-w-sm bg-zinc-900 border border-zinc-800 rounded-3xl p-6">
         <div className="text-center mb-5">
           <img
-            src="/brand/logo-tile.png"
+            src="/brand/groceryhaulz-mark.svg"
             alt="Grocery Hauls Pro za logo"
             className="h-16 w-16 rounded-2xl shadow-md mx-auto mb-3"
           />
@@ -690,7 +707,7 @@ type AdminPost = {
 function WhatsNewTab() {
   const [posts, setPosts] = useState<AdminPost[]>([])
   const [stores, setStores] = useState<{ id: string; name: string }[]>([])
-  const [form, setForm] = useState({ title: '', description: '', tag: 'new', storeId: '' })
+  const [form, setForm] = useState({ title: '', description: '', tag: 'new', storeId: '', imageUrl: '' })
 
   const load = useCallback(async () => {
     apiGet<{ posts: AdminPost[] }>('/api/admin/whatsnew').then((d) => setPosts(d.posts)).catch(() => {})
@@ -704,8 +721,8 @@ function WhatsNewTab() {
   const create = async () => {
     try {
       await apiPost('/api/admin/whatsnew', { ...form, storeId: form.storeId || null })
-      toast({ title: 'Post created ✨' })
-      setForm({ title: '', description: '', tag: 'new', storeId: '' })
+      toast({ title: 'Post saved in this browser ✨' })
+      setForm({ title: '', description: '', tag: 'new', storeId: '', imageUrl: '' })
       load()
     } catch (e) {
       toast({ title: 'Could not create post', description: (e as Error).message, variant: 'destructive' })
@@ -725,6 +742,7 @@ function WhatsNewTab() {
 
   return (
     <div className="space-y-4">
+      {STATIC_MODE && <p className="rounded-xl border border-amber-800 bg-amber-950/30 p-3 text-xs leading-relaxed text-amber-200">Local-only mode: announcements are saved on this browser and appear here in this testing copy only. They are not broadcast to other users. A shared announcement needs to be added to the published catalogue and redeployed.</p>}
       <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-4">
         <h2 className="font-bold text-sm">Create a What&apos;s New post</h2>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 mt-3">
@@ -742,6 +760,7 @@ function WhatsNewTab() {
             {stores.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
           </select>
           <Input placeholder="Short description" value={form.description} onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))} className="h-10 bg-zinc-800 border-zinc-700 text-zinc-100 text-xs" />
+          <Input placeholder="Optional image or GIF URL (https://…)" value={form.imageUrl} onChange={(e) => setForm((f) => ({ ...f, imageUrl: e.target.value }))} className="h-10 bg-zinc-800 border-zinc-700 text-zinc-100 text-xs sm:col-span-2" />
         </div>
         <Button onClick={create} disabled={!form.title.trim() || !form.description.trim()} className="mt-3 bg-lime-600 hover:bg-lime-700 text-zinc-950 h-10">
           <Plus className="h-4 w-4 mr-1" /> Publish post

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import type { Promotion, StorePrice } from '@prisma/client'
 import { getAuthUser, unauthorized, badRequest } from '@/lib/server/auth'
 
 export const dynamic = 'force-dynamic'
@@ -44,7 +45,7 @@ export async function POST(req: NextRequest) {
     const [prices, promos] = await Promise.all([
       productIds.length
         ? db.storePrice.findMany({ where: { storeId, productId: { in: productIds } } })
-        : Promise.resolve([]),
+        : Promise.resolve([] as StorePrice[]),
       productIds.length
         ? db.promotion.findMany({
             where: {
@@ -56,10 +57,10 @@ export async function POST(req: NextRequest) {
             },
             orderBy: { promoPrice: 'asc' },
           })
-        : Promise.resolve([]),
+        : Promise.resolve([] as Promotion[]),
     ])
-    const priceMap = new Map(prices.map((p) => [p.productId, p.price]))
-    const promoMap = new Map(promos.map((p) => [p.productId, p.promoPrice]))
+    const priceMap = new Map<string, number>(prices.map((p): [string, number] => [p.productId, p.price]))
+    const promoMap = new Map<string, number>(promos.map((p): [string, number] => [p.productId, p.promoPrice]))
 
     await db.shopSessionItem.createMany({
       data: listItems.map((i) => {

@@ -137,12 +137,11 @@ export function LoginView() {
       <div className="w-full max-w-sm">
         <div className="text-center mb-8">
           <img
-            src="/brand/logo-lockup.png"
+            src="/brand/groceryhaulz-logo.svg"
             alt="GroceryHaulz-Pro za"
             className="w-60 max-w-[80vw] mx-auto mb-4 drop-shadow-2xl"
           />
           <h1 className="sr-only">Grocery Hauls Pro za</h1>
-          <p className="text-white font-semibold">Super Intelligence Budget Shopping</p>
         </div>
 
         <div className="bg-white rounded-3xl shadow-xl p-6 space-y-4">

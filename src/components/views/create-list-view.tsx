@@ -44,6 +44,9 @@ type ListItemT = {
 }
 type LookupSuggestion = { title: string; snippet: string; url: string; price: number | null }
 
+const SOUTH_AFRICAN_PROVINCES = ["Eastern Cape","Free State","Gauteng","KwaZulu-Natal","Limpopo","Mpumalanga","Northern Cape","North West","Western Cape"]
+const ONLINE_RETAILERS = [{"id":"online:amazon","name":"Amazon"},{"id":"online:takealot","name":"Takealot"},{"id":"online:dash","name":"Dash"},{"id":"cmvf8db6b0002nd5yu29vuj15","name":"Checkers Sixty60"},{"id":"cmvf8db6c0003nd5yerbaoig6","name":"Pick n Pay Online"},{"id":"online:dischem","name":"Dis-Chem"},{"id":"cmvf8db6f0006nd5ybzpjvxyf","name":"Clicks"},{"id":"cmvf8db6d0004nd5yhj2qxzd9","name":"Woolworths Online"},{"id":"online:makro","name":"Makro"},{"id":"cmvf8db690000nd5yglrgwp22","name":"Boxer Online"},{"id":"cmvf8db6e0005nd5yna5eu2rf","name":"SPAR Online"},{"id":"cmvf8db6b0001nd5ygpc2qkt0","name":"Shoprite Online"}]
+
 export function CreateListView() {
   const activeListId = useApp((s) => s.activeListId)
   const preAddPromoIds = useApp((s) => s.preAddPromoIds)
@@ -52,6 +55,10 @@ export function CreateListView() {
 
   const [listId, setListId] = useState<string | null>(activeListId)
   const [listName, setListName] = useState('')
+  const [preferredStoreId, setPreferredStoreId] = useState('')
+  const [province, setProvince] = useState('')
+  const [shoppingMode, setShoppingMode] = useState<'in-store' | 'online'>('in-store')
+  const [manualUnit, setManualUnit] = useState('')
   const [items, setItems] = useState<ListItemT[]>([])
   const [stores, setStores] = useState<StoreT[]>([])
   const [categories, setCategories] = useState<CategoryT[]>([])
@@ -88,6 +95,14 @@ export function CreateListView() {
       .then((d) => {
         setStores(d.stores)
         setSelectedStores(d.stores.map((s) => s.id))
+        try {
+          const savedPreferred = localStorage.getItem('gh_preferred_store') || ''
+          const savedProvince = localStorage.getItem('gh_province') || ''
+          const savedMode = localStorage.getItem('gh_shopping_mode')
+          setProvince(SOUTH_AFRICAN_PROVINCES.includes(savedProvince) ? savedProvince : '')
+          setShoppingMode(savedMode === 'online' ? 'online' : 'in-store')
+          setPreferredStoreId(d.stores.some((s) => s.id === savedPreferred) || ONLINE_RETAILERS.some((s) => s.id === savedPreferred) ? savedPreferred : '')
+        } catch { /* ignore */ }
       })
       .catch(() => {})
     apiGet<{ categories: CategoryT[] }>('/api/categories')
@@ -95,28 +110,12 @@ export function CreateListView() {
       .catch(() => {})
   }, [])
 
+  // Keep this view in sync when the user opens a saved list and chooses Add items.
   useEffect(() => {
-    if (listId) loadList(listId)
-  }, [listId, loadList])
-
-  // Auto-create list when arriving with promo products to pre-add
-  useEffect(() => {
-    const boot = async () => {
-      if (preAddPromoIds.length > 0 && !listId) {
-        try {
-          const { list } = await apiPost<{ list: { id: string } }>('/api/lists', { name: 'New List' })
-          for (const pid of preAddPromoIds) {
-            await apiPost(`/api/lists/${list.id}/items`, { productId: pid, quantity: 1, source: 'promo' })
-          }
-          setPreAdd([])
-          setListId(list.id)
-        } catch (e) {
-          toast({ title: 'Could not start list', description: (e as Error).message, variant: 'destructive' })
-        }
-      }
-    }
-    boot()
-  }, [preAddPromoIds, listId, setPreAdd])
+    setListId(activeListId)
+    if (activeListId) loadList(activeListId)
+    else { setItems([]); setListName('') }
+  }, [activeListId, loadList])
 
   // Search with debounce; category browse
   useEffect(() => {
@@ -144,18 +143,51 @@ export function CreateListView() {
     }
   }, [search, activeCat])
 
-  const ensureList = async (): Promise<string | null> => {
-    if (listId) return listId
-    const name = listName.trim() || 'My Grocery List'
+  const createNamedList = async () => {
+    const name = listName.trim()
+    if (!province) {
+      toast({ title: 'Choose your province first', variant: 'destructive' })
+      return
+    }
+    if (!preferredStoreId) {
+      toast({ title: 'Choose your preferred store first', description: 'Select the retailer you plan to shop with.', variant: 'destructive' })
+      return
+    }
+    if (!name) {
+      toast({ title: 'Name your list first', description: 'Enter a name before adding products.', variant: 'destructive' })
+      return
+    }
     try {
+      try {
+        localStorage.setItem('gh_preferred_store', preferredStoreId)
+        localStorage.setItem('gh_preferred_store_label', (shoppingMode === 'online' ? ONLINE_RETAILERS : stores).find((s) => s.id === preferredStoreId)?.name || '')
+        localStorage.setItem('gh_province', province)
+        localStorage.setItem('gh_shopping_mode', shoppingMode)
+      } catch { /* ignore */ }
       const { list } = await apiPost<{ list: { id: string; name: string } }>('/api/lists', { name })
+      try {
+        const contexts = JSON.parse(localStorage.getItem('gh_list_context') || '{}')
+        contexts[list.id] = { province, shoppingMode, preferredStoreId, preferredStoreLabel: (shoppingMode === 'online' ? ONLINE_RETAILERS : stores).find((s) => s.id === preferredStoreId)?.name || '' }
+        localStorage.setItem('gh_list_context', JSON.stringify(contexts))
+      } catch { /* ignore */ }
+      // Promo shortcuts are added only after the user has named and created the list.
+      for (const productId of preAddPromoIds) {
+        await apiPost(`/api/lists/${list.id}/items`, { productId, quantity: 1, source: 'promo' })
+      }
+      if (preAddPromoIds.length) setPreAdd([])
       setListId(list.id)
       setListName(list.name)
-      return list.id
+      await loadList(list.id)
+      toast({ title: 'List created', description: list.name })
     } catch (e) {
       toast({ title: 'Could not create list', description: (e as Error).message, variant: 'destructive' })
-      return null
     }
+  }
+
+  const ensureList = async (): Promise<string | null> => {
+    if (listId) return listId
+    toast({ title: 'Create and name your list first', variant: 'destructive' })
+    return null
   }
 
   const addProduct = async (p: ProductResult) => {
@@ -172,12 +204,16 @@ export function CreateListView() {
 
   const addManual = async () => {
     const price = parseFloat(manualPrice)
+    if (!manualStore) {
+      toast({ title: 'Choose the store first', variant: 'destructive' })
+      return
+    }
     if (!manualName.trim()) {
       toast({ title: 'Enter the product name', variant: 'destructive' })
       return
     }
-    if (Number.isNaN(price) || price <= 0) {
-      toast({ title: 'Enter the shelf price', description: 'Check the price tag in-store.', variant: 'destructive' })
+    if (manualPrice.trim() && (!Number.isFinite(price) || price < 0)) {
+      toast({ title: 'Check the price', description: 'Enter a valid positive price or leave it blank.', variant: 'destructive' })
       return
     }
     const id = await ensureList()
@@ -185,13 +221,15 @@ export function CreateListView() {
     try {
       await apiPost(`/api/lists/${id}/items`, {
         name: manualName.trim(),
-        price,
+        unit: manualUnit.trim() || null,
+        price: manualPrice.trim() ? price : null,
         storeId: manualStore || null,
         source: 'manual',
       })
       toast({ title: 'Added to list 🛒', description: manualName.trim() })
       setManualOpen(false)
       setManualName('')
+      setManualUnit('')
       setManualPrice('')
       setManualSearch('')
       setLookup(null)
@@ -229,19 +267,11 @@ export function CreateListView() {
     }
   }
 
-  const runLookup = async () => {
-    if (!manualName.trim() || manualName.trim().length < 3) return
-    setLookupLoading(true)
-    try {
-      const data = await apiGet<{ suggestions: LookupSuggestion[] }>(
-        `/api/lookup?q=${encodeURIComponent(manualName.trim())}`
-      )
-      setLookup(data.suggestions)
-    } catch {
-      setLookup([])
-    } finally {
-      setLookupLoading(false)
-    }
+  const runLookup = () => {
+    if (!manualName.trim() || manualName.trim().length < 2) return
+    const retailer = stores.find((store) => store.id === manualStore)?.name || ''
+    const query = [retailer, manualName.trim(), manualUnit.trim(), 'price South Africa'].filter(Boolean).join(' ')
+    window.open(`https://www.google.com/search?q=${encodeURIComponent(query)}`, '_blank', 'noopener,noreferrer')
   }
 
   const totalItems = items.reduce((a, i) => a + i.quantity, 0)
@@ -251,24 +281,53 @@ export function CreateListView() {
       toast({ title: 'Your list is empty', description: 'Add a few products first.', variant: 'destructive' })
       return
     }
-    setStoreSheetOpen(true)
+    // Preferred store is already selected before list creation; compare all retailers directly.
+    goCompare()
   }
 
   const goCompare = () => {
     if (!listId) return
-    // remember chosen stores for the compare view
-    try {
-      sessionStorage.setItem('gh_compare_stores', JSON.stringify(selectedStores))
-    } catch {
-      /* ignore */
-    }
+    // Always compare every retailer in the catalogue; stale/partial browser selections
+    // must never hide stores from the comparison screen.
+    try { sessionStorage.setItem('gh_compare_stores', JSON.stringify(stores.map((s) => s.id))) } catch { /* ignore */ }
     setStoreSheetOpen(false)
-    openCompare(listId, listName || 'My Grocery List')
+    openCompare(listId, listName)
   }
 
   // web-sourced suggestions filtered by the user's search term
   const showManualAddHint =
     search.trim().length >= 2 && !searching && results.length === 0 && !activeCat
+
+  if (!listId) {
+    return (
+      <div className="px-4 pt-8 max-w-xl mx-auto">
+        <div className="rounded-3xl bg-white border border-zinc-100 shadow-sm p-5">
+          <div className="h-12 w-12 rounded-2xl bg-blue-50 text-blue-700 flex items-center justify-center text-2xl">🛒</div>
+          <h1 className="text-xl font-extrabold text-zinc-900 mt-3">Create your grocery list</h1>
+          <p className="text-sm text-zinc-500 mt-1">Choose your province and shopping method, then select your preferred retailer before naming the list.</p>
+          <label className="block text-xs font-semibold text-zinc-600 mt-4" htmlFor="new-list-province">1. Province</label>
+          <select id="new-list-province" value={province} onChange={(e) => { setProvince(e.target.value); try { localStorage.setItem('gh_province', e.target.value) } catch { /* ignore */ } }} className="w-full h-12 mt-1 rounded-lg border border-zinc-200 bg-white px-3 text-base">
+            <option value="">Choose your province…</option>
+            {SOUTH_AFRICAN_PROVINCES.map((p) => <option key={p} value={p}>{p}</option>)}
+          </select>
+          <label className="block text-xs font-semibold text-zinc-600 mt-3">2. Shopping method</label>
+          <div className="grid grid-cols-2 gap-2 mt-1">
+            <button type="button" onClick={() => { setShoppingMode('in-store'); setPreferredStoreId(''); try { localStorage.setItem('gh_shopping_mode', 'in-store'); localStorage.removeItem('gh_preferred_store') } catch { /* ignore */ } }} className={`h-11 rounded-lg border text-sm font-semibold ${shoppingMode === 'in-store' ? 'border-blue-600 bg-blue-50 text-blue-700' : 'border-zinc-200 bg-white text-zinc-600'}`}>🏬 In-store</button>
+            <button type="button" onClick={() => { setShoppingMode('online'); setPreferredStoreId(''); try { localStorage.setItem('gh_shopping_mode', 'online'); localStorage.removeItem('gh_preferred_store') } catch { /* ignore */ } }} className={`h-11 rounded-lg border text-sm font-semibold ${shoppingMode === 'online' ? 'border-blue-600 bg-blue-50 text-blue-700' : 'border-zinc-200 bg-white text-zinc-600'}`}>🌐 Online</button>
+          </div>
+          <label className="block text-xs font-semibold text-zinc-600 mt-3" htmlFor="new-list-preferred-store">3. Preferred {shoppingMode === 'online' ? 'online retailer' : 'store'}</label>
+          <select id="new-list-preferred-store" value={preferredStoreId} onChange={(e) => { setPreferredStoreId(e.target.value); try { localStorage.setItem('gh_preferred_store', e.target.value) } catch { /* ignore */ } }} className="w-full h-12 mt-1 rounded-lg border border-zinc-200 bg-white px-3 text-base">
+            <option value="">Choose your preferred {shoppingMode === 'online' ? 'online retailer' : 'store'}…</option>
+            {(shoppingMode === 'online' ? ONLINE_RETAILERS : stores).map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+          </select>
+          {shoppingMode === 'online' && <p className="text-[11px] text-zinc-500 mt-1">Online retailers are saved as your shopping preference. Live online prices are shown only where catalogue prices are available.</p>}
+          <label className="block text-xs font-semibold text-zinc-600 mt-3" htmlFor="new-list-name">4. List name</label>
+          <Input id="new-list-name" value={listName} onChange={(e) => setListName(e.target.value)} placeholder="e.g. November groceries, Black Friday" className="h-12 mt-1 text-base" aria-label="New grocery list name" onKeyDown={(e) => e.key === 'Enter' && createNamedList()} />
+          <Button onClick={createNamedList} disabled={!province || !listName.trim() || !preferredStoreId} className="w-full h-12 mt-3 bg-blue-600 hover:bg-blue-700 font-bold">Create list and add products</Button>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className="px-4 pt-4 max-w-xl mx-auto">
@@ -321,7 +380,7 @@ export function CreateListView() {
                       {formatZAR(item.lowestPrice)} from {item.lowestStoreName} • not on promotion
                     </span>
                   ) : (
-                    <span className="text-[9px] text-zinc-500">manual item — {formatZAR(item.manualPrice ?? 0)}</span>
+                    <span className="text-[9px] text-zinc-500">{item.manualPrice == null ? 'manual item — price not entered' : `manual item — ${formatZAR(item.manualPrice)}`}</span>
                   )}
                 </div>
               </div>
@@ -472,7 +531,7 @@ export function CreateListView() {
 
       {/* Store selection sheet */}
       <Sheet open={storeSheetOpen} onOpenChange={setStoreSheetOpen}>
-        <SheetContent side="bottom" className="rounded-t-3xl max-h-[85vh]">
+        <SheetContent side="bottom" className="rounded-t-3xl max-h-[85dvh] flex flex-col overflow-hidden">
           <SheetHeader>
             <SheetTitle className="text-left flex items-center gap-2">
               <Store className="h-5 w-5 text-blue-600" /> Choose your stores
@@ -482,7 +541,16 @@ export function CreateListView() {
               your shopping between two stores.
             </SheetDescription>
           </SheetHeader>
-          <ScrollArea className="max-h-[40vh] mt-2">
+          <Button
+            onClick={goCompare}
+            disabled={selectedStores.length < 1}
+            className="w-full mt-3 h-12 shrink-0 bg-blue-600 hover:bg-blue-700 font-bold text-base"
+          >
+            <ShoppingBasket className="h-5 w-5 mr-2" /> Compare basket prices ({selectedStores.length} store
+            {selectedStores.length > 1 ? 's' : ''})
+          </Button>
+          <p className="text-[11px] text-zinc-500 mt-1">Select the stores you want to compare below.</p>
+          <ScrollArea className="mt-2 min-h-0 flex-1 max-h-[48dvh]">
             <div className="space-y-1.5 px-1">
               {stores.map((s) => {
                 const checked = selectedStores.includes(s.id)
@@ -520,14 +588,7 @@ export function CreateListView() {
               })}
             </div>
           </ScrollArea>
-          <Button
-            onClick={goCompare}
-            disabled={selectedStores.length < 1}
-            className="w-full mt-3 mb-4 h-12 bg-blue-600 hover:bg-blue-700 font-bold text-base"
-          >
-            <ShoppingBasket className="h-5 w-5 mr-2" /> Compare basket prices ({selectedStores.length} store
-            {selectedStores.length > 1 ? 's' : ''})
-          </Button>
+          <div className="h-2 shrink-0" />
         </SheetContent>
       </Sheet>
 
@@ -537,7 +598,7 @@ export function CreateListView() {
           <DialogHeader>
             <DialogTitle className="text-left">Add a product manually</DialogTitle>
             <DialogDescription className="text-left">
-              Step 1: choose the store where you saw it. Step 2: enter the name and shelf price.
+              Choose the store, then enter the product name and size. Google opens a search; confirm the price yourself or leave it blank for Shop Mode.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-3">
@@ -571,15 +632,19 @@ export function CreateListView() {
                 className="h-11 mt-1"
               />
             </div>
+            <div>
+              <label className="text-xs font-semibold text-zinc-500" htmlFor="manual-size">Size / pack</label>
+              <Input id="manual-size" value={manualUnit} onChange={(e) => setManualUnit(e.target.value)} placeholder="e.g. 2L, 5kg, 6-pack" className="h-11 mt-1" />
+            </div>
             <Button
               variant="outline"
               onClick={runLookup}
               disabled={lookupLoading || manualName.trim().length < 3}
               className="w-full h-10 border-blue-300 text-blue-700 hover:bg-blue-50"
             >
-              <Globe className="h-4 w-4 mr-1.5" />
-              {lookupLoading ? 'Searching the web…' : 'Find price on the web (Google Search)'}
+              <Globe className="h-4 w-4 mr-1.5" /> Open Google search in a new tab
             </Button>
+            <p className="text-[11px] text-zinc-500 -mt-1">Google opens separately. Check the matching store, product and size, then enter the displayed price below. The app does not automatically read prices from Google.</p>
             {lookup && (
               <div className="space-y-1.5">
                 {lookup.length === 0 && (
@@ -616,7 +681,7 @@ export function CreateListView() {
                 step="0.01"
                 value={manualPrice}
                 onChange={(e) => setManualPrice(e.target.value)}
-                placeholder="e.g. 44.99"
+                placeholder="Optional — enter price when known"
                 className="h-11 mt-1"
               />
             </div>

@@ -4,13 +4,13 @@ import { useEffect, useState } from 'react'
 import { useApp } from '@/lib/store'
 import { apiGet, apiPost } from '@/lib/api'
 import { initialsOf } from '@/lib/format'
-import { Bell, Heart } from 'lucide-react'
-import { Button } from '@/components/ui/button'
+import { Bell, Menu, X } from 'lucide-react'
 
 export function TopBar() {
   const user = useApp((s) => s.user)
   const go = useApp((s) => s.go)
   const [unread, setUnread] = useState(0)
+  const [menuOpen, setMenuOpen] = useState(false)
 
   useEffect(() => {
     let cancelled = false
@@ -19,66 +19,54 @@ export function TopBar() {
         const data = await apiGet<{ unread: number }>('/api/notifications')
         if (!cancelled) setUnread(data.unread)
       } catch {
-        /* ignore */
+        /* Notifications are optional in local-only mode. */
       }
     }
     load()
-    const t = setInterval(load, 60_000)
+    const timer = window.setInterval(load, 60_000)
     return () => {
       cancelled = true
-      clearInterval(t)
+      window.clearInterval(timer)
     }
   }, [])
 
+  const nav = [
+    ['home', 'Overview'],
+    ['specials', 'Specials'],
+    ['create', 'Create a new list'],
+    ['lists', 'My lists'],
+    ['shop', 'Shop mode'],
+    ['whatsnew', "What's new"],
+    ['profile', 'Profile'],
+  ] as const
+
   return (
-    <header className="sticky top-0 z-40 bg-gradient-to-r from-blue-700 to-sky-500 text-white shadow-md">
-      <div className="flex items-center justify-between px-4 py-3">
+    <header className="sticky top-0 z-40 border-b border-slate-200 bg-[#f7f9f7] text-slate-700">
+      <div className="relative flex h-[68px] items-center justify-between px-4">
         <button
-          className="flex items-center gap-2 text-left"
-          onClick={() => go('home')}
-          aria-label="Go to home"
+          onClick={() => setMenuOpen((value) => !value)}
+          className="rounded-xl p-2 hover:bg-slate-200/70"
+          aria-label={menuOpen ? 'Close navigation menu' : 'Open navigation menu'}
         >
-          <img
-            src="/brand/logo-tile.png"
-            alt="Grocery Hauls Pro za logo"
-            className="h-9 w-9 rounded-[10px] shadow-sm"
-          />
-          <span>
-            <span className="block text-sm font-extrabold leading-tight tracking-tight">
-              Grocery Hauls Pro za
-            </span>
-            <span className="block text-[10px] font-medium text-sky-100 leading-tight">
-              Super Intelligence Budget Shopping
-            </span>
-          </span>
+          {menuOpen ? <X className="h-6 w-6" /> : <Menu className="h-6 w-6" />}
         </button>
-        <div className="flex items-center gap-1">
-          <Button
-            variant="ghost"
-            size="icon"
-            className="text-white hover:bg-blue-900/25 relative"
-            onClick={() => go('wishlist')}
-            aria-label="Wish list"
-          >
-            <Heart className="h-5 w-5" />
-          </Button>
-          <Button
-            variant="ghost"
-            size="icon"
-            className="text-white hover:bg-blue-900/25 relative"
+        <span className="absolute left-1/2 -translate-x-1/2 text-[17px] font-semibold tracking-tight">
+          Overview
+        </span>
+        <div className="flex items-center gap-3">
+          <button
             onClick={() => go('notifications')}
+            className="relative rounded-xl p-2 hover:bg-slate-200/70"
             aria-label={`Notifications${unread ? `, ${unread} unread` : ''}`}
           >
-            <Bell className="h-5 w-5" />
+            <Bell className="h-6 w-6" />
             {unread > 0 && (
-              <span className="absolute -top-0.5 -right-0.5 bg-red-600 text-white text-[10px] font-bold rounded-full min-w-4 h-4 px-1 flex items-center justify-center">
-                {unread > 9 ? '9+' : unread}
-              </span>
+              <span className="absolute right-1 top-1 h-2 w-2 rounded-full bg-red-500 ring-2 ring-[#f7f9f7]" />
             )}
-          </Button>
+          </button>
           <button
             onClick={() => go('profile')}
-            className="ml-1 h-9 w-9 rounded-full bg-white/20 border-2 border-white/70 overflow-hidden flex items-center justify-center text-xs font-bold"
+            className="flex h-11 w-11 items-center justify-center overflow-hidden rounded-full bg-amber-300 text-sm font-extrabold text-amber-950"
             aria-label="Profile"
           >
             {user?.image ? (
@@ -87,8 +75,27 @@ export function TopBar() {
               initialsOf(user?.name || 'U')
             )}
           </button>
+          <button onClick={() => go('profile')} aria-label="Open profile" className="text-xl leading-none">
+            ›
+          </button>
         </div>
       </div>
+      {menuOpen && (
+        <nav className="absolute left-3 top-[60px] z-50 w-64 rounded-2xl border border-slate-200 bg-white p-2 shadow-xl">
+          {nav.map(([view, label]) => (
+            <button
+              key={view}
+              onClick={() => {
+                go(view)
+                setMenuOpen(false)
+              }}
+              className="block w-full rounded-xl px-3 py-3 text-left text-sm font-semibold text-slate-700 hover:bg-lime-50 hover:text-slate-950"
+            >
+              {label}
+            </button>
+          ))}
+        </nav>
+      )}
     </header>
   )
 }

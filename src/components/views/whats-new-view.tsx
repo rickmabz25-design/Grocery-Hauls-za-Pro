@@ -70,7 +70,7 @@ export function WhatsNewView() {
         {posts.map((post) => (
           <article key={post.id} className="bg-white rounded-2xl border border-zinc-100 shadow-sm overflow-hidden">
             {/* Banner */}
-            <div className="h-24 bg-gradient-to-r from-blue-700 via-blue-600 to-sky-500 relative flex items-center px-4">
+            <div className="whats-new-banner h-32 bg-gradient-to-r from-blue-900 via-blue-700 to-lime-500 relative flex items-center px-4">
               {post.imageUrl ? (
                 <img src={post.imageUrl} alt="" className="absolute inset-0 h-full w-full object-cover" />
               ) : null}
@@ -79,7 +79,7 @@ export function WhatsNewView() {
                   <span className={`text-[9px] font-extrabold uppercase tracking-wide rounded-full px-2 py-1 ${tagColors[post.tag] || tagColors.campaign}`}>
                     {TAG_LABELS[post.tag] || post.tag}
                   </span>
-                  <h2 className="text-white font-extrabold text-lg leading-tight mt-1 drop-shadow-sm">
+                  <h2 className="text-white font-extrabold text-xl leading-tight mt-2 drop-shadow-sm">
                     {post.title}
                   </h2>
                 </div>

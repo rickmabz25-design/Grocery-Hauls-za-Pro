@@ -9,7 +9,6 @@ export async function GET(req: NextRequest) {
   const admin = await getAdmin(req)
   if (!admin) return unauthorized('Admin access required')
   const posts = await db.whatsNewPost.findMany({
-    include: { store: true },
     orderBy: { datePosted: 'desc' },
   })
   const promoIds = posts.flatMap((p) => (Array.isArray(p.promoIds) ? (p.promoIds as string[]) : []))
@@ -28,7 +27,7 @@ export async function GET(req: NextRequest) {
       imageUrl: p.imageUrl,
       tag: p.tag,
       storeId: p.storeId,
-      storeName: p.store?.name ?? null,
+      storeName: null,
       active: p.active,
       datePosted: p.datePosted,
       promoCount: Array.isArray(p.promoIds) ? (p.promoIds as string[]).length : 0,

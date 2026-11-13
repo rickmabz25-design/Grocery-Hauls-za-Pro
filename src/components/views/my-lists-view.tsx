@@ -14,6 +14,10 @@ import {
   Plus, Copy, Trash2, Pencil, CheckCircle, RotateCcw, BarChart3, CheckCheck, History,
 } from 'lucide-react'
 
+type StoreOption = { id: string; name: string }
+const SOUTH_AFRICAN_PROVINCES = ["Eastern Cape","Free State","Gauteng","KwaZulu-Natal","Limpopo","Mpumalanga","Northern Cape","North West","Western Cape"]
+const ONLINE_RETAILERS = [{"id":"online:amazon","name":"Amazon"},{"id":"online:takealot","name":"Takealot"},{"id":"online:dash","name":"Dash"},{"id":"cmvf8db6b0002nd5yu29vuj15","name":"Checkers Sixty60"},{"id":"cmvf8db6c0003nd5yerbaoig6","name":"Pick n Pay Online"},{"id":"online:dischem","name":"Dis-Chem"},{"id":"cmvf8db6f0006nd5ybzpjvxyf","name":"Clicks"},{"id":"cmvf8db6d0004nd5yhj2qxzd9","name":"Woolworths Online"},{"id":"online:makro","name":"Makro"},{"id":"cmvf8db690000nd5yglrgwp22","name":"Boxer Online"},{"id":"cmvf8db6e0005nd5yna5eu2rf","name":"SPAR Online"},{"id":"cmvf8db6b0001nd5ygpc2qkt0","name":"Shoprite Online"}]
+
 type ListSummary = {
   id: string
   name: string
@@ -29,6 +33,10 @@ type ListSummary = {
 
 export function MyListsView() {
   const [lists, setLists] = useState<ListSummary[]>([])
+  const [stores, setStores] = useState<StoreOption[]>([])
+  const [preferredStoreId, setPreferredStoreId] = useState('')
+  const [province, setProvince] = useState('')
+  const [shoppingMode, setShoppingMode] = useState<'in-store' | 'online'>('in-store')
   const [loading, setLoading] = useState(true)
   const [createOpen, setCreateOpen] = useState(false)
   const [newName, setNewName] = useState('')
@@ -51,12 +59,42 @@ export function MyListsView() {
 
   useEffect(() => {
     load()
+    apiGet<{ stores: StoreOption[] }>('/api/stores').then((d) => {
+      setStores(d.stores)
+      try {
+        const saved = localStorage.getItem('gh_preferred_store') || ''
+        const savedProvince = localStorage.getItem('gh_province') || ''
+        const savedMode = localStorage.getItem('gh_shopping_mode')
+        setProvince(SOUTH_AFRICAN_PROVINCES.includes(savedProvince) ? savedProvince : '')
+        setShoppingMode(savedMode === 'online' ? 'online' : 'in-store')
+        setPreferredStoreId(d.stores.some((s) => s.id === saved) || ONLINE_RETAILERS.some((s) => s.id === saved) ? saved : '')
+      } catch { /* ignore */ }
+    }).catch(() => {})
   }, [load])
 
   const create = async () => {
     if (!newName.trim()) return
+    if (!province) {
+      toast({ title: 'Choose your province first', variant: 'destructive' })
+      return
+    }
+    if (!preferredStoreId) {
+      toast({ title: 'Choose your preferred store first', variant: 'destructive' })
+      return
+    }
     try {
+      try {
+        localStorage.setItem('gh_preferred_store', preferredStoreId)
+        localStorage.setItem('gh_preferred_store_label', (shoppingMode === 'online' ? ONLINE_RETAILERS : stores).find((s) => s.id === preferredStoreId)?.name || '')
+        localStorage.setItem('gh_province', province)
+        localStorage.setItem('gh_shopping_mode', shoppingMode)
+      } catch { /* ignore */ }
       const { list } = await apiPost<{ list: { id: string; name: string } }>('/api/lists', { name: newName.trim() })
+      try {
+        const contexts = JSON.parse(localStorage.getItem('gh_list_context') || '{}')
+        contexts[list.id] = { province, shoppingMode, preferredStoreId, preferredStoreLabel: (shoppingMode === 'online' ? ONLINE_RETAILERS : stores).find((s) => s.id === preferredStoreId)?.name || '' }
+        localStorage.setItem('gh_list_context', JSON.stringify(contexts))
+      } catch { /* ignore */ }
       setCreateOpen(false)
       setNewName('')
       openList(list.id, list.name)
@@ -195,9 +233,27 @@ export function MyListsView() {
         <DialogContent className="max-w-sm rounded-2xl">
           <DialogHeader>
             <DialogTitle className="text-left">New grocery list</DialogTitle>
-            <DialogDescription className="text-left">Give it a name you&apos;ll recognise.</DialogDescription>
+            <DialogDescription className="text-left">Choose your province, shopping method and preferred retailer before naming your list.</DialogDescription>
           </DialogHeader>
+          <label className="block text-xs font-semibold text-zinc-600" htmlFor="my-list-province">1. Province</label>
+          <select id="my-list-province" value={province} onChange={(e) => { setProvince(e.target.value); try { localStorage.setItem('gh_province', e.target.value) } catch { /* ignore */ } }} className="w-full h-11 rounded-lg border border-zinc-200 bg-white px-3 text-sm">
+            <option value="">Choose your province…</option>
+            {SOUTH_AFRICAN_PROVINCES.map((p) => <option key={p} value={p}>{p}</option>)}
+          </select>
+          <label className="block text-xs font-semibold text-zinc-600">2. Shopping method</label>
+          <div className="grid grid-cols-2 gap-2">
+            <button type="button" onClick={() => { setShoppingMode('in-store'); setPreferredStoreId(''); try { localStorage.setItem('gh_shopping_mode', 'in-store'); localStorage.removeItem('gh_preferred_store') } catch { /* ignore */ } }} className={`h-10 rounded-lg border text-sm font-semibold ${shoppingMode === 'in-store' ? 'border-blue-600 bg-blue-50 text-blue-700' : 'border-zinc-200 bg-white text-zinc-600'}`}>🏬 In-store</button>
+            <button type="button" onClick={() => { setShoppingMode('online'); setPreferredStoreId(''); try { localStorage.setItem('gh_shopping_mode', 'online'); localStorage.removeItem('gh_preferred_store') } catch { /* ignore */ } }} className={`h-10 rounded-lg border text-sm font-semibold ${shoppingMode === 'online' ? 'border-blue-600 bg-blue-50 text-blue-700' : 'border-zinc-200 bg-white text-zinc-600'}`}>🌐 Online</button>
+          </div>
+          <label className="block text-xs font-semibold text-zinc-600" htmlFor="my-list-preferred-store">3. Preferred {shoppingMode === 'online' ? 'online retailer' : 'store'}</label>
+          <select id="my-list-preferred-store" value={preferredStoreId} onChange={(e) => { setPreferredStoreId(e.target.value); try { localStorage.setItem('gh_preferred_store', e.target.value) } catch { /* ignore */ } }} className="w-full h-11 rounded-lg border border-zinc-200 bg-white px-3 text-sm">
+            <option value="">Choose your preferred {shoppingMode === 'online' ? 'online retailer' : 'store'}…</option>
+            {(shoppingMode === 'online' ? ONLINE_RETAILERS : stores).map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+          </select>
+          {shoppingMode === 'online' && <p className="text-[11px] text-zinc-500">Online retailer prices are included only where catalogue prices are available.</p>}
+          <label className="block text-xs font-semibold text-zinc-600" htmlFor="my-list-name">4. List name</label>
           <Input
+            id="my-list-name"
             autoFocus
             value={newName}
             onChange={(e) => setNewName(e.target.value)}
@@ -205,7 +261,7 @@ export function MyListsView() {
             className="h-11"
             onKeyDown={(e) => e.key === 'Enter' && create()}
           />
-          <Button onClick={create} disabled={!newName.trim()} className="w-full h-11 bg-blue-600 hover:bg-blue-700 font-semibold">
+          <Button onClick={create} disabled={!province || !newName.trim() || !preferredStoreId} className="w-full h-11 bg-blue-600 hover:bg-blue-700 font-semibold">
             <CheckCheck className="h-4 w-4 mr-1" /> Create list
           </Button>
         </DialogContent>

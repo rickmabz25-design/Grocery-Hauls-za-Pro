@@ -82,7 +82,7 @@ export async function GET(req: NextRequest, ctx: Ctx) {
     lowestStoreName: i.productId ? priceBy.get(i.productId)?.storeName ?? null : null,
     lowestStoreId: i.productId ? priceBy.get(i.productId)?.storeId ?? null : null,
     promo: i.productId ? promoBy.get(i.productId) ?? null : null,
-    notOnPromo: Boolean(i.productId) && !promoBy.has(i.productId),
+    notOnPromo: i.productId != null && !promoBy.has(i.productId),
   }))
 
   return NextResponse.json({

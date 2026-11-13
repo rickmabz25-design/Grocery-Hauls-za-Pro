@@ -8,7 +8,7 @@ export function WhatsNewFab() {
   return (
     <button
       onClick={() => go('whatsnew')}
-      className="fixed bottom-24 right-4 z-40 flex items-center gap-1.5 rounded-full bg-lime-500 text-black pl-3 pr-4 py-2.5 shadow-lg shadow-lime-500/40 ring-1 ring-black/10 active:scale-95 transition-transform"
+      className="whats-new-pulse fixed bottom-24 right-4 z-40 flex items-center gap-1.5 rounded-full bg-lime-300 text-slate-950 pl-3 pr-4 py-3 shadow-xl shadow-lime-500/40 ring-2 ring-lime-100 active:scale-95 transition-transform"
       aria-label="What's New — latest promotions and campaigns"
     >
       <Sparkles className="h-4 w-4" />

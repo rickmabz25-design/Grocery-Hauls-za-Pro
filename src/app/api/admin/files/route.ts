@@ -101,7 +101,7 @@ export async function DELETE(req: NextRequest) {
   if (!upload) return badRequest('File not found')
   if (upload.url) {
     const filePath = path.join(process.cwd(), 'public', upload.url)
-    fs.unlink(filePath).catch(() => {})
+    fs.promises.unlink(filePath).catch(() => {})
   }
   await db.upload.delete({ where: { id } })
   return NextResponse.json({ ok: true })

@@ -23,6 +23,7 @@ type SessionItem = {
   quantity: number
   bought: boolean
   source: string
+  unit?: string | null
 }
 type SessionData = {
   session: {
@@ -61,6 +62,7 @@ export function ShopModeView() {
   const [scanning, setScanning] = useState(false)
   const [manualOpen, setManualOpen] = useState(false)
   const [manualName, setManualName] = useState('')
+  const [manualUnit, setManualUnit] = useState('')
   const [manualPrice, setManualPrice] = useState('')
   const videoRef = useRef<HTMLVideoElement | null>(null)
   const readerRef = useRef<{ reset: () => void } | null>(null)
@@ -140,7 +142,7 @@ export function ShopModeView() {
       const reader = await getBarcodeReader()
       readerRef.current = reader
       if (videoRef.current) {
-        await reader.decodeFromVideoDevice(undefined, videoRef.current, (result) => {
+        await reader.decodeFromVideoDevice(null, videoRef.current, (result) => {
           if (result) {
             const text = result.getText()
             if (text) handleScanResult(text)
@@ -164,12 +166,14 @@ export function ShopModeView() {
     try {
       await apiPost(`/api/shop/sessions/${session.session.id}/items`, {
         name: manualName.trim(),
+        unit: manualUnit.trim() || null,
         price: manualPrice ? Number(manualPrice) : undefined,
         source: 'manual',
       })
       toast({ title: 'Added to basket 🧺', description: manualName.trim() })
       setManualOpen(false)
       setManualName('')
+      setManualUnit('')
       setManualPrice('')
       await refresh(session.session.id)
     } catch (e) {
@@ -358,6 +362,26 @@ export function ShopModeView() {
                 <p className={`text-sm font-semibold truncate ${item.bought ? 'line-through text-zinc-400' : 'text-zinc-900'}`}>
                   {item.name}
                 </p>
+                {item.unit && <p className="text-[10px] text-zinc-400">{item.unit}</p>}
+                {item.source === 'manual' && (
+                  <Input
+                    key={`manual-price-${item.id}-${item.price}`}
+                    type="number"
+                    inputMode="decimal"
+                    min="0"
+                    step="0.01"
+                    defaultValue={item.price > 0 ? String(item.price) : ''}
+                    placeholder="Enter shelf price (R)"
+                    onBlur={(e) => {
+                      const value = e.target.value.trim()
+                      if (value && Number.isFinite(Number(value)) && Number(value) >= 0) {
+                        updateItem(item, { price: Number(value) })
+                      }
+                    }}
+                    className="mt-1 h-8 max-w-[170px] text-xs"
+                    aria-label={`Enter price for ${item.name}`}
+                  />
+                )}
                 <div className="flex items-center gap-1.5 mt-0.5">
                   {item.source === 'list' && (
                     <span className="text-[9px] bg-sky-100 text-sky-700 rounded px-1 py-0.5 font-bold">LIST</span>
@@ -443,7 +467,7 @@ export function ShopModeView() {
           <DialogHeader>
             <DialogTitle className="text-left">Add product manually</DialogTitle>
             <DialogDescription className="text-left">
-              Enter the name and the shelf price from the price tag.
+              Enter the product name. You can add the shelf price now or enter it on the basket item later.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-3">
@@ -455,20 +479,26 @@ export function ShopModeView() {
               className="h-11"
             />
             <Input
+              value={manualUnit}
+              onChange={(e) => setManualUnit(e.target.value)}
+              placeholder="Size / pack, e.g. 2L, 5kg, 6-pack"
+              className="h-11"
+            />
+            <Input
               type="number"
               inputMode="decimal"
               min="0"
               step="0.01"
               value={manualPrice}
               onChange={(e) => setManualPrice(e.target.value)}
-              placeholder="Shelf price, e.g. 29.99"
+              placeholder="Optional shelf price, e.g. 29.99"
               className="h-11"
             />
             <p className="text-[11px] text-zinc-400 leading-relaxed">
               This price is user-entered or web-sourced and is not verified. Actual in-store pricing may
               differ.
             </p>
-            <Button onClick={addManual} disabled={!manualName.trim() || !manualPrice} className="w-full h-11 bg-blue-600 hover:bg-blue-700 font-semibold">
+            <Button onClick={addManual} disabled={!manualName.trim()} className="w-full h-11 bg-blue-600 hover:bg-blue-700 font-semibold">
               Add to basket
             </Button>
           </div>

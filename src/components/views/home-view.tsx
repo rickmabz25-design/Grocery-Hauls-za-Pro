@@ -25,8 +25,8 @@ const actions = [
 ] as const
 
 export function HomeView() {
-  const user = useApp((s) => s.user)
   const go = useApp((s) => s.go)
+  const user = useApp((s) => s.user)
   const [stats, setStats] = useState<HomeStats | null>(null)
   const firstName = (user?.name || 'there').split(' ')[0]
 
@@ -50,31 +50,22 @@ export function HomeView() {
 
   return (
     <div className="px-4 pt-4 max-w-xl mx-auto">
-      {/* Greeting card */}
-      <div className="rounded-3xl bg-gradient-to-br from-blue-700 to-sky-500 text-white p-5 shadow-md">
-        <p className="text-sky-100 text-sm">Welcome back 👋</p>
-        <h1 className="text-2xl font-extrabold mt-0.5">{firstName}!</h1>
-        <p className="text-sm text-sky-50 mt-2 leading-relaxed">
-          Create a list, compare specials at South Africa&apos;s biggest supermarkets, and let
-          <span className="font-bold"> super intelligence</span> find your cheapest basket.
-        </p>
-        {stats && (
-          <div className="grid grid-cols-3 gap-2 mt-4">
-            <div className="bg-white/15 rounded-xl px-2 py-2 text-center">
-              <p className="text-lg font-extrabold">{stats.activePromos}</p>
-              <p className="text-[10px] text-sky-100">live specials</p>
-            </div>
-            <div className="bg-white/15 rounded-xl px-2 py-2 text-center">
-              <p className="text-lg font-extrabold">{stats.lists}</p>
-              <p className="text-[10px] text-sky-100">my lists</p>
-            </div>
-            <button className="bg-white/15 rounded-xl px-2 py-2 text-center hover:bg-white/25 transition" onClick={() => go('notifications')}>
-              <p className="text-lg font-extrabold">{stats.unreadNotifications}</p>
-              <p className="text-[10px] text-sky-100">new alerts</p>
-            </button>
-          </div>
-        )}
-      </div>
+      {/* Branded hero panel */}
+      <section className="relative overflow-hidden rounded-[30px] min-h-[440px] bg-[#123f78] text-white p-6 shadow-lg">
+        <div className="absolute -left-24 -top-10 h-[470px] w-[470px] rounded-full bg-blue-600/90" />
+        <div className="absolute -right-16 top-8 h-64 w-64 rounded-full border-[38px] border-white/5" />
+        <div className="relative z-10 max-w-[310px]">
+          <p className="text-lime-300 text-xs font-extrabold uppercase tracking-[0.18em]">{new Date().toLocaleDateString('en-ZA', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}</p>
+          <h1 className="text-[2.45rem] leading-[1.04] font-medium tracking-tight mt-5">Super Intelligent<br /><span className="text-lime-300">Budget Buying</span></h1>
+          <p className="text-white/90 text-base leading-relaxed mt-6">Compare specials across SA&apos;s favourite stores and make every rand count.</p>
+          <button onClick={() => go('create')} className="mt-8 rounded-2xl bg-lime-300 text-slate-950 font-extrabold px-5 py-3.5 flex items-center gap-3 shadow-md active:scale-95 transition">Start a new list <ArrowRight className="h-5 w-5" /></button>
+          <button onClick={() => go('specials')} className="mt-5 flex items-center gap-2 text-sm font-bold text-white">See today&apos;s specials <ArrowRight className="h-4 w-4" /></button>
+          <button onClick={() => go('shop')} className="mt-5 flex items-center gap-2 text-sm font-bold text-white"><ScanLine className="h-4 w-4" /> Shop mode</button>
+        </div>
+        <div className="absolute bottom-5 right-5 z-10 rotate-3 rounded-2xl bg-[#d8e5dc] px-4 py-3 text-slate-900 shadow-lg w-40">
+          <p className="text-[8px] font-black uppercase tracking-[0.16em]">Your saving potential</p><p className="text-3xl font-black mt-1">R{stats ? Math.max(0, stats.activePromos * 32) : 320}</p><p className="text-[9px] text-slate-600">based on available specials</p>
+        </div>
+      </section>
 
       {/* Main action grid */}
       <h2 className="font-bold text-zinc-900 mt-6 mb-3 flex items-center gap-2">
