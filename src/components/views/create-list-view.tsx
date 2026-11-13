@@ -44,6 +44,9 @@ type ListItemT = {
 }
 type LookupSuggestion = { title: string; snippet: string; url: string; price: number | null }
 
+const SOUTH_AFRICAN_PROVINCES = ["Eastern Cape","Free State","Gauteng","KwaZulu-Natal","Limpopo","Mpumalanga","Northern Cape","North West","Western Cape"]
+const ONLINE_RETAILERS = [{"id":"online:amazon","name":"Amazon"},{"id":"online:takealot","name":"Takealot"},{"id":"online:dash","name":"Dash"},{"id":"cmvf8db6b0002nd5yu29vuj15","name":"Checkers Sixty60"},{"id":"cmvf8db6c0003nd5yerbaoig6","name":"Pick n Pay Online"},{"id":"online:dischem","name":"Dis-Chem"},{"id":"cmvf8db6f0006nd5ybzpjvxyf","name":"Clicks"},{"id":"cmvf8db6d0004nd5yhj2qxzd9","name":"Woolworths Online"},{"id":"online:makro","name":"Makro"},{"id":"cmvf8db690000nd5yglrgwp22","name":"Boxer Online"},{"id":"cmvf8db6e0005nd5yna5eu2rf","name":"SPAR Online"},{"id":"cmvf8db6b0001nd5ygpc2qkt0","name":"Shoprite Online"}]
+
 export function CreateListView() {
   const activeListId = useApp((s) => s.activeListId)
   const preAddPromoIds = useApp((s) => s.preAddPromoIds)
@@ -53,6 +56,8 @@ export function CreateListView() {
   const [listId, setListId] = useState<string | null>(activeListId)
   const [listName, setListName] = useState('')
   const [preferredStoreId, setPreferredStoreId] = useState('')
+  const [province, setProvince] = useState('')
+  const [shoppingMode, setShoppingMode] = useState<'in-store' | 'online'>('in-store')
   const [manualUnit, setManualUnit] = useState('')
   const [items, setItems] = useState<ListItemT[]>([])
   const [stores, setStores] = useState<StoreT[]>([])
@@ -92,7 +97,11 @@ export function CreateListView() {
         setSelectedStores(d.stores.map((s) => s.id))
         try {
           const savedPreferred = localStorage.getItem('gh_preferred_store') || ''
-          setPreferredStoreId(d.stores.some((s) => s.id === savedPreferred) ? savedPreferred : '')
+          const savedProvince = localStorage.getItem('gh_province') || ''
+          const savedMode = localStorage.getItem('gh_shopping_mode')
+          setProvince(SOUTH_AFRICAN_PROVINCES.includes(savedProvince) ? savedProvince : '')
+          setShoppingMode(savedMode === 'online' ? 'online' : 'in-store')
+          setPreferredStoreId(d.stores.some((s) => s.id === savedPreferred) || ONLINE_RETAILERS.some((s) => s.id === savedPreferred) ? savedPreferred : '')
         } catch { /* ignore */ }
       })
       .catch(() => {})
@@ -136,8 +145,12 @@ export function CreateListView() {
 
   const createNamedList = async () => {
     const name = listName.trim()
+    if (!province) {
+      toast({ title: 'Choose your province first', variant: 'destructive' })
+      return
+    }
     if (!preferredStoreId) {
-      toast({ title: 'Choose your preferred store first', description: 'This helps us keep your preferred retailer visible in comparisons.', variant: 'destructive' })
+      toast({ title: 'Choose your preferred store first', description: 'Select the retailer you plan to shop with.', variant: 'destructive' })
       return
     }
     if (!name) {
@@ -145,7 +158,12 @@ export function CreateListView() {
       return
     }
     try {
-      try { localStorage.setItem('gh_preferred_store', preferredStoreId) } catch { /* ignore */ }
+      try {
+        localStorage.setItem('gh_preferred_store', preferredStoreId)
+        localStorage.setItem('gh_preferred_store_label', (shoppingMode === 'online' ? ONLINE_RETAILERS : stores).find((s) => s.id === preferredStoreId)?.name || '')
+        localStorage.setItem('gh_province', province)
+        localStorage.setItem('gh_shopping_mode', shoppingMode)
+      } catch { /* ignore */ }
       const { list } = await apiPost<{ list: { id: string; name: string } }>('/api/lists', { name })
       // Promo shortcuts are added only after the user has named and created the list.
       for (const productId of preAddPromoIds) {
@@ -281,15 +299,26 @@ export function CreateListView() {
         <div className="rounded-3xl bg-white border border-zinc-100 shadow-sm p-5">
           <div className="h-12 w-12 rounded-2xl bg-blue-50 text-blue-700 flex items-center justify-center text-2xl">🛒</div>
           <h1 className="text-xl font-extrabold text-zinc-900 mt-3">Create your grocery list</h1>
-          <p className="text-sm text-zinc-500 mt-1">Choose your main retailer first, then name this shopping trip. Your list will be saved in this browser.</p>
-          <label className="block text-xs font-semibold text-zinc-600 mt-4" htmlFor="new-list-preferred-store">1. Preferred store</label>
-          <select id="new-list-preferred-store" value={preferredStoreId} onChange={(e) => { setPreferredStoreId(e.target.value); try { localStorage.setItem('gh_preferred_store', e.target.value) } catch { /* ignore */ } }} className="w-full h-12 mt-1 rounded-lg border border-zinc-200 bg-white px-3 text-base">
-            <option value="">Choose your preferred store…</option>
-            {stores.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+          <p className="text-sm text-zinc-500 mt-1">Choose your province and shopping method, then select your preferred retailer before naming the list.</p>
+          <label className="block text-xs font-semibold text-zinc-600 mt-4" htmlFor="new-list-province">1. Province</label>
+          <select id="new-list-province" value={province} onChange={(e) => { setProvince(e.target.value); try { localStorage.setItem('gh_province', e.target.value) } catch { /* ignore */ } }} className="w-full h-12 mt-1 rounded-lg border border-zinc-200 bg-white px-3 text-base">
+            <option value="">Choose your province…</option>
+            {SOUTH_AFRICAN_PROVINCES.map((p) => <option key={p} value={p}>{p}</option>)}
           </select>
-          <label className="block text-xs font-semibold text-zinc-600 mt-3" htmlFor="new-list-name">2. List name</label>
+          <label className="block text-xs font-semibold text-zinc-600 mt-3">2. Shopping method</label>
+          <div className="grid grid-cols-2 gap-2 mt-1">
+            <button type="button" onClick={() => { setShoppingMode('in-store'); setPreferredStoreId(''); try { localStorage.setItem('gh_shopping_mode', 'in-store'); localStorage.removeItem('gh_preferred_store') } catch { /* ignore */ } }} className={`h-11 rounded-lg border text-sm font-semibold ${shoppingMode === 'in-store' ? 'border-blue-600 bg-blue-50 text-blue-700' : 'border-zinc-200 bg-white text-zinc-600'}`}>🏬 In-store</button>
+            <button type="button" onClick={() => { setShoppingMode('online'); setPreferredStoreId(''); try { localStorage.setItem('gh_shopping_mode', 'online'); localStorage.removeItem('gh_preferred_store') } catch { /* ignore */ } }} className={`h-11 rounded-lg border text-sm font-semibold ${shoppingMode === 'online' ? 'border-blue-600 bg-blue-50 text-blue-700' : 'border-zinc-200 bg-white text-zinc-600'}`}>🌐 Online</button>
+          </div>
+          <label className="block text-xs font-semibold text-zinc-600 mt-3" htmlFor="new-list-preferred-store">3. Preferred {shoppingMode === 'online' ? 'online retailer' : 'store'}</label>
+          <select id="new-list-preferred-store" value={preferredStoreId} onChange={(e) => { setPreferredStoreId(e.target.value); try { localStorage.setItem('gh_preferred_store', e.target.value) } catch { /* ignore */ } }} className="w-full h-12 mt-1 rounded-lg border border-zinc-200 bg-white px-3 text-base">
+            <option value="">Choose your preferred {shoppingMode === 'online' ? 'online retailer' : 'store'}…</option>
+            {(shoppingMode === 'online' ? ONLINE_RETAILERS : stores).map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+          </select>
+          {shoppingMode === 'online' && <p className="text-[11px] text-zinc-500 mt-1">Online retailers are saved as your shopping preference. Live online prices are shown only where catalogue prices are available.</p>}
+          <label className="block text-xs font-semibold text-zinc-600 mt-3" htmlFor="new-list-name">4. List name</label>
           <Input id="new-list-name" value={listName} onChange={(e) => setListName(e.target.value)} placeholder="e.g. November groceries, Black Friday" className="h-12 mt-1 text-base" aria-label="New grocery list name" onKeyDown={(e) => e.key === 'Enter' && createNamedList()} />
-          <Button onClick={createNamedList} disabled={!listName.trim() || !preferredStoreId} className="w-full h-12 mt-3 bg-blue-600 hover:bg-blue-700 font-bold">Create list and add products</Button>
+          <Button onClick={createNamedList} disabled={!province || !listName.trim() || !preferredStoreId} className="w-full h-12 mt-3 bg-blue-600 hover:bg-blue-700 font-bold">Create list and add products</Button>
         </div>
       </div>
     )
