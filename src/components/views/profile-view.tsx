@@ -8,7 +8,6 @@ import { isValidSAMobile, WHATSAPP_BANNER, DISCLAIMER_PRICES } from '@/lib/forma
 import { ADMIN_EMAIL_PRIMARY, APP_SHARE_URL } from '@/lib/constants'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { Switch } from '@/components/ui/switch'
 import { LogOut, MessageCircle, ShieldCheck, QrCode, Info } from 'lucide-react'
 
 export function ProfileView() {
@@ -16,7 +15,6 @@ export function ProfileView() {
   const setUser = useApp((s) => s.setUser)
   const logoutLocal = useApp((s) => s.logoutLocal)
   const [whatsapp, setWhatsapp] = useState(user?.whatsappNumber ?? '')
-  const [optIn, setOptIn] = useState(user?.whatsappOptIn ?? false)
   const [saving, setSaving] = useState(false)
   // Actual origin the app is being served from (correct on any domain).
   // Falls back to the canonical Pages URL during static pre-render.
@@ -24,7 +22,6 @@ export function ProfileView() {
 
   useEffect(() => {
     setWhatsapp(user?.whatsappNumber ?? '')
-    setOptIn(user?.whatsappOptIn ?? false)
   }, [user])
 
   useEffect(() => {
@@ -38,7 +35,7 @@ export function ProfileView() {
     try {
       const data = await apiPatch<{ user: import('@/lib/store').SessionUser }>('/api/profile', {
         whatsappNumber: whatsapp.trim(),
-        whatsappOptIn: whatsapp.trim() ? optIn : false,
+        whatsappOptIn: Boolean(whatsapp.trim()),
       })
       setUser(data.user)
       toast({
@@ -52,15 +49,6 @@ export function ProfileView() {
     }
   }
 
-  const toggleOptIn = async (checked: boolean) => {
-    setOptIn(checked)
-    try {
-      const data = await apiPatch<{ user: import('@/lib/store').SessionUser }>('/api/profile', { whatsappOptIn: checked })
-      setUser(data.user)
-    } catch {
-      setOptIn(!checked)
-    }
-  }
 
   const signOut = async () => {
     // Sign out of Firebase Authentication too (if the user signed in with Google)
@@ -124,12 +112,9 @@ export function ProfileView() {
               </p>
             )}
           </div>
-          <div className="flex items-center justify-between rounded-xl bg-zinc-50 px-3 py-2.5">
-            <div>
-              <p className="text-sm font-semibold text-zinc-700">Opt in to WhatsApp alerts</p>
-              <p className="text-[11px] text-zinc-400">Only used for wish list price-drop alerts.</p>
-            </div>
-            <Switch checked={optIn} onCheckedChange={toggleOptIn} disabled={!user.whatsappNumber} aria-label="WhatsApp opt-in" />
+          <div className="rounded-xl bg-lime-50 border border-lime-200 px-3 py-3">
+            <p className="text-xs font-semibold text-zinc-800">Consent to WhatsApp alerts</p>
+            <p className="text-[11px] text-zinc-600 mt-1 leading-relaxed">By saving your WhatsApp number, you agree to receive GroceryHaulz updates and wish-list price-drop alerts on WhatsApp. You can withdraw your consent by removing your number.</p>
           </div>
           <Button
             onClick={saveWhatsApp}
@@ -139,8 +124,7 @@ export function ProfileView() {
             {saving ? 'Saving…' : 'Save WhatsApp preferences'}
           </Button>
           <p className="text-[10px] text-zinc-400 leading-relaxed">
-            This version only collects and stores your number and opt-in choice — no WhatsApp messages
-            are sent yet. In-app price-drop notifications are active now.
+            Your number and consent are saved in your browser profile. WhatsApp messages are not sent yet; in-app price-drop notifications are active.
           </p>
         </div>
       </div>
