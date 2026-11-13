@@ -376,7 +376,7 @@ export async function handleStaticApi(method: string, path: string, body: AnyRec
       const price = promo?.promoPrice ?? product?.storePrices?.[store.id] ?? (item.manualStoreId === store.id ? item.manualPrice : 0) ?? 0
       return { id: id(), productId: item.productId, name: product?.name || item.manualName || 'Item',
         price: number(price), promoPrice: promo?.promoPrice ?? null, quantity: item.quantity,
-        bought: false, source: 'list' }
+        bought: false, source: item.productId ? 'list' : 'manual' }
     })
     state.shopSessions.unshift(session); save()
     return { session: { id: session.id, storeId: store.id, listId: session.listId } }
@@ -419,8 +419,8 @@ export async function handleStaticApi(method: string, path: string, body: AnyRec
       const promo = product ? promos.filter((p) => p.productId === product.id && p.storeId === session.storeId &&
         new Date(p.startDate) <= new Date() && new Date(p.endDate) >= new Date()).sort((a, b) => a.promoPrice - b.promoPrice)[0] : null
       const shelf = body?.price == null ? (promo?.promoPrice ?? product?.storePrices?.[session.storeId]) : Number(body.price)
-      if (shelf == null || !Number.isFinite(Number(shelf)) || Number(shelf) < 0) fail('Enter the shelf price from the price tag')
-      const item = { id: id(), productId: product?.id ?? null, name: name.slice(0, 80), price: Number(shelf),
+      if (shelf != null && (!Number.isFinite(Number(shelf)) || Number(shelf) < 0)) fail('Enter a valid shelf price')
+      const item = { id: id(), productId: product?.id ?? null, name: name.slice(0, 80), price: Number(shelf ?? 0),
         promoPrice: promo?.promoPrice ?? null, quantity: Math.max(1, Math.min(99, number(body?.quantity, 1))),
         bought: false, source: body?.source ?? (product ? 'scan' : 'manual') }
       session.items.push(item); save()
@@ -553,7 +553,7 @@ export async function handleStaticApi(method: string, path: string, body: AnyRec
         } else {
           const name = String(body?.name || '').trim(), price = body?.price == null ? null : Number(body.price)
           if (!name) fail('Enter the product name')
-          if (price == null || !Number.isFinite(price) || price < 0) fail('Enter the shelf price from the price tag')
+          if (price != null && (!Number.isFinite(price) || price < 0)) fail('Enter a valid shelf price')
           item = { id: id(), listId, productId: null, manualName: name.slice(0, 80), manualPrice: price, manualStoreId: body.storeId || null, quantity, source: body.source ?? 'manual', note: null, createdAt: nowIso() }
         }
         state.items.push(item); save(); return { item }
