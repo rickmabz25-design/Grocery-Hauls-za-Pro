@@ -8,7 +8,7 @@ import { formatZAR } from '@/lib/format'
 import type { CompareResult } from '@/lib/server/compare'
 import { Button } from '@/components/ui/button'
 import {
-  SplitSquareHorizontal, Car, Save, CheckCircle2, Store, ShoppingBasket, TrendingDown,
+  SplitSquareHorizontal, Car, Save, CheckCircle2, Store, ShoppingBasket, TrendingDown, ExternalLink,
 } from 'lucide-react'
 
 export function SplitView() {
@@ -18,6 +18,15 @@ export function SplitView() {
   const [result, setResult] = useState<CompareResult | null>(null)
   const [loading, setLoading] = useState(true)
   const [saved, setSaved] = useState(false)
+  const [isOnline, setIsOnline] = useState(false)
+
+  useEffect(() => {
+    if (!activeListId) return
+    try {
+      const contexts = JSON.parse(localStorage.getItem('gh_list_context') || '{}')
+      setIsOnline(contexts[activeListId]?.shoppingMode === 'online')
+    } catch { setIsOnline(false) }
+  }, [activeListId])
 
   useEffect(() => {
     if (!activeListId) return
@@ -135,6 +144,8 @@ export function SplitView() {
         color={store1.color}
         cost={store1.cost}
         items={store1.items}
+        online={isOnline}
+        shopUrl={onlineShopUrl(store1.name)}
       />
       {/* Store 2 */}
       <SplitStoreCard
@@ -143,6 +154,8 @@ export function SplitView() {
         color={store2.color}
         cost={store2.cost}
         items={store2.items}
+        online={isOnline}
+        shopUrl={onlineShopUrl(store2.name)}
       />
 
       {/* Choose your plan */}
@@ -231,12 +244,16 @@ function SplitStoreCard({
   color,
   cost,
   items,
+  online,
+  shopUrl,
 }: {
   label: string
   name: string
   color: string
   cost: number
   items: { itemId: string; name: string; quantity: number; unit: string | null; price: number }[]
+  online: boolean
+  shopUrl: string | null
 }) {
   return (
     <div className="bg-white rounded-2xl border border-zinc-100 shadow-sm mt-3 overflow-hidden">
@@ -257,6 +274,19 @@ function SplitStoreCard({
         </div>
         <p className="font-extrabold text-zinc-900">{formatZAR(cost)}</p>
       </div>
+      {online && shopUrl && (
+        <div className="px-3.5 pb-3.5">
+          <a
+            href={shopUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="w-full inline-flex items-center justify-center gap-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-sm py-3"
+          >
+            Go to {name} online <ExternalLink className="h-4 w-4" />
+          </a>
+          <p className="text-[10px] text-zinc-400 text-center mt-1">Opens this retailer in a new tab. Repeat for the other shop to complete your split basket.</p>
+        </div>
+      )}
       <ul className="px-3.5 pb-3.5 space-y-1">
         {items.map((i) => (
           <li key={i.itemId} className="flex items-center justify-between text-xs text-zinc-600">
@@ -270,4 +300,24 @@ function SplitStoreCard({
       </ul>
     </div>
   )
+}
+
+
+function onlineShopUrl(storeName: string): string | null {
+  const key = storeName.toLowerCase().replace(/[^a-z0-9]/g, '')
+  const urls: Record<string, string> = {
+    boxer: 'https://www.boxer.co.za/',
+    checkers: 'https://www.checkers.co.za/',
+    clicks: 'https://clicks.co.za/',
+    picknpay: 'https://www.pnp.co.za/',
+    spar: 'https://www.spar.co.za/',
+    shoprite: 'https://www.shoprite.co.za/',
+    woolworths: 'https://www.woolworths.co.za/',
+    dischem: 'https://www.dischem.co.za/',
+    makro: 'https://www.makro.co.za/',
+    takealot: 'https://www.takealot.com/',
+    amazon: 'https://www.amazon.co.za/',
+    dash: 'https://www.dash.co.za/',
+  }
+  return urls[key] ?? null
 }
