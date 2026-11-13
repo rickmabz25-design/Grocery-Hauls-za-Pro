@@ -104,7 +104,7 @@ export function AdminView() {
       {/* Tabs */}
       <div className="bg-zinc-900/60 border-b border-zinc-800 px-3 py-2 sticky top-[57px] z-20">
         <div className="max-w-5xl mx-auto flex gap-1.5 overflow-x-auto">
-          {(STATIC_MODE ? tabs.filter((t) => t.key === 'import') : tabs).map((t) => {
+          {(STATIC_MODE ? tabs.filter((t) => t.key === 'import' || t.key === 'whatsnew') : tabs).map((t) => {
             const Icon = t.icon
             return (
               <button
@@ -707,7 +707,7 @@ type AdminPost = {
 function WhatsNewTab() {
   const [posts, setPosts] = useState<AdminPost[]>([])
   const [stores, setStores] = useState<{ id: string; name: string }[]>([])
-  const [form, setForm] = useState({ title: '', description: '', tag: 'new', storeId: '' })
+  const [form, setForm] = useState({ title: '', description: '', tag: 'new', storeId: '', imageUrl: '' })
 
   const load = useCallback(async () => {
     apiGet<{ posts: AdminPost[] }>('/api/admin/whatsnew').then((d) => setPosts(d.posts)).catch(() => {})
@@ -722,7 +722,7 @@ function WhatsNewTab() {
     try {
       await apiPost('/api/admin/whatsnew', { ...form, storeId: form.storeId || null })
       toast({ title: 'Post created ✨' })
-      setForm({ title: '', description: '', tag: 'new', storeId: '' })
+      setForm({ title: '', description: '', tag: 'new', storeId: '', imageUrl: '' })
       load()
     } catch (e) {
       toast({ title: 'Could not create post', description: (e as Error).message, variant: 'destructive' })
@@ -759,6 +759,7 @@ function WhatsNewTab() {
             {stores.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
           </select>
           <Input placeholder="Short description" value={form.description} onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))} className="h-10 bg-zinc-800 border-zinc-700 text-zinc-100 text-xs" />
+          <Input placeholder="Optional image or GIF URL (https://…)" value={form.imageUrl} onChange={(e) => setForm((f) => ({ ...f, imageUrl: e.target.value }))} className="h-10 bg-zinc-800 border-zinc-700 text-zinc-100 text-xs sm:col-span-2" />
         </div>
         <Button onClick={create} disabled={!form.title.trim() || !form.description.trim()} className="mt-3 bg-lime-600 hover:bg-lime-700 text-zinc-950 h-10">
           <Plus className="h-4 w-4 mr-1" /> Publish post
