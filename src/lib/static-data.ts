@@ -204,12 +204,11 @@ const enrichItem = (item: AnyRecord, products: AnyRecord[], stores: AnyRecord[],
   }
 }
 async function compareList(state: AnyRecord, listId: string, storeIds: string[], preferred: string | null, ctx?: StaticContext) {
-  if (!storeIds.length) fail('Select at least one store to compare')
-  if (storeIds.length > 7) fail('Select up to 7 stores')
   const list = requireList(state, listId)
   const [products, stores, promos] = await Promise.all([getProducts(), getStores(), getPromos(ctx)])
-  const selected = stores.filter((s) => storeIds.includes(s.id))
-  if (!selected.length) fail('Select at least one valid store to compare')
+  // Empty selection means all retailers; ignore stale IDs and include every known store.
+  const selected = storeIds.length ? stores.filter((s) => storeIds.includes(s.id)) : stores
+  if (!selected.length) fail('No retailers are available to compare')
   const items = state.items.filter((i: AnyRecord) => i.listId === listId)
   const effective = (productId: string, storeId: string) => {
     const product = products.find((p) => p.id === productId)
@@ -243,7 +242,9 @@ async function compareList(state: AnyRecord, listId: string, storeIds: string[],
   })
   // Only rank stores that can supply the entire basket; partial baskets must not be labelled cheapest.
   const ranked = storeResults.filter((s) => s.available > 0 && s.missing === 0).sort((a, b) => a.total - b.total)
-  const cheapest = ranked[0] || null
+  // Only publish a cheapest/most-expensive ranking when at least two stores
+  // can price the complete basket. Partial baskets never produce savings claims.
+  const cheapest = ranked.length > 1 ? ranked[0] : null
   const mostExpensive = ranked.length > 1 ? ranked[ranked.length - 1] : null
   storeResults.forEach((s) => { s.cheapest = s.storeId === cheapest?.storeId; s.mostExpensive = s.storeId === mostExpensive?.storeId })
 
@@ -374,7 +375,7 @@ export async function handleStaticApi(method: string, path: string, body: AnyRec
       const promo = promos.filter((p) => p.productId === item.productId && p.storeId === store.id &&
         new Date(p.startDate) <= new Date() && new Date(p.endDate) >= new Date()).sort((a, b) => a.promoPrice - b.promoPrice)[0]
       const price = promo?.promoPrice ?? product?.storePrices?.[store.id] ?? (item.manualStoreId === store.id ? item.manualPrice : 0) ?? 0
-      return { id: id(), productId: item.productId, name: product?.name || item.manualName || 'Item',
+      return { id: id(), listItemId: item.id, productId: item.productId, name: product?.name || item.manualName || 'Item',
         price: number(price), promoPrice: promo?.promoPrice ?? null, quantity: item.quantity,
         bought: false, source: item.productId ? 'list' : 'manual' }
     })
@@ -431,7 +432,15 @@ export async function handleStaticApi(method: string, path: string, body: AnyRec
       if (!item) fail('Item not found')
       if (body?.quantity != null) item.quantity = Math.max(1, Math.min(99, number(body.quantity, 1)))
       if (body?.bought != null) item.bought = Boolean(body.bought)
-      if (body?.price != null && Number.isFinite(Number(body.price)) && Number(body.price) >= 0) item.price = Number(body.price)
+      if (body?.price != null && Number.isFinite(Number(body.price)) && Number(body.price) >= 0) {
+        item.price = Number(body.price)
+        // A price entered for a manual item loaded from a saved list must update
+        // that original list item too, otherwise the next comparison stays unpriced.
+        if (item.source === 'manual' && item.listItemId && session.listId) {
+          const listItem = state.items.find((li: AnyRecord) => li.id === item.listItemId && li.listId === session.listId)
+          if (listItem) { listItem.manualPrice = Number(body.price); listItem.manualStoreId = session.storeId }
+        }
+      }
       if (body?.promoPrice !== undefined) item.promoPrice = body.promoPrice
       save(); return { item }
     }
