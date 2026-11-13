@@ -17,6 +17,7 @@ export function CompareView() {
   const [result, setResult] = useState<CompareResult | null>(null)
   const [loading, setLoading] = useState(true)
   const [preferred, setPreferred] = useState('')
+  const [listContext, setListContext] = useState<{ province?: string; shoppingMode?: string; preferredStoreLabel?: string } | null>(null)
 
   useEffect(() => {
     if (!activeListId) return
@@ -25,9 +26,16 @@ export function CompareView() {
     apiGet<{ stores: { id: string }[] }>('/api/stores')
       .then((d) => {
         let savedPreferred = ''
-        try { savedPreferred = localStorage.getItem('gh_preferred_store') || '' } catch { /* ignore */ }
-        setPreferred(savedPreferred)
-        runCompare(d.stores.map((s) => s.id), savedPreferred)
+        let context: { province?: string; shoppingMode?: string; preferredStoreLabel?: string } | null = null
+        try {
+          savedPreferred = localStorage.getItem('gh_preferred_store') || ''
+          const contexts = JSON.parse(localStorage.getItem('gh_list_context') || '{}')
+          context = contexts[activeListId] || null
+        } catch { /* ignore */ }
+        setListContext(context)
+        const comparablePreferred = d.stores.some((s) => s.id === savedPreferred) ? savedPreferred : ''
+        setPreferred(comparablePreferred)
+        runCompare(d.stores.map((s) => s.id), comparablePreferred)
       })
       .catch(() => setLoading(false))
   }, [activeListId])
@@ -91,6 +99,14 @@ export function CompareView() {
       <p className="text-xs text-zinc-400 mt-0.5">
         {result ? `${result.listName} • ${result.itemCount} products compared` : 'Calculating your basket at every store…'}
       </p>
+      {listContext && (
+        <div className="mt-3 rounded-xl bg-sky-50 border border-sky-100 p-3 text-xs text-sky-900">
+          <p className="font-bold">{listContext.shoppingMode === 'online' ? '🌐 Online shopping' : '🏬 In-store shopping'}{listContext.province ? ` • ${listContext.province}` : ''}</p>
+          {listContext.shoppingMode === 'online' && listContext.preferredStoreLabel && (
+            <p className="mt-1">Preferred online retailer: <strong>{listContext.preferredStoreLabel}</strong>. Online prices are not yet available for every retailer, so the comparison below uses prices currently in the catalogue.</p>
+          )}
+        </div>
+      )}
 
       {/* Preferred store */}
       <div className="mt-3 bg-white rounded-2xl border border-zinc-100 p-3">
