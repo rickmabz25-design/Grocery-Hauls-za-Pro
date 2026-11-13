@@ -78,6 +78,7 @@ ok(flyerRows[4].multiBuyQuantity === 5 && flyerRows[4].multiBuyPrice === 100, 'B
 ok(flyerRows[5].multiBuyQuantity === 2 && flyerRows[5].multiBuyPrice === 84 && flyerRows[5].singleItemPrice === 47.99, 'Illovo bundle and single price are parsed separately')
 ok(flyerRows[6].multiBuyQuantity === 2 && flyerRows[6].multiBuyPrice === 58 && flyerRows[6].singleItemPrice === 34.99, 'Tastic bundle and single price are parsed separately')
 ok(reviewSummary(flyerRows).multiBuyRows === 6, 'review summary counts all six valid multi-buy deals')
+ok(reviewSummary(flyerRows).priceOnly === 3, 'review summary counts the three single-item prices alongside bundle offers')
 
 console.log('--- buildReviewRows flags ---')
 const ctx = {
