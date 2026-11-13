@@ -192,7 +192,7 @@ export function reviewSummary(rows: ImportReviewRow[]) {
     total: rows.length,
     promoRows: rows.filter((row) => !rowHasError(row) && row.promoPrice != null).length,
     multiBuyRows: rows.filter((row) => !rowHasError(row) && row.multiBuyQuantity != null && row.multiBuyPrice != null).length,
-    priceOnly: rows.filter((row) => !rowHasError(row) && row.promoPrice == null && row.normalPrice != null).length,
+    priceOnly: rows.filter((row) => !rowHasError(row) && row.promoPrice == null && (row.normalPrice != null || row.singleItemPrice != null)).length,
     errors: rows.filter(rowHasError).length,
     warnings: rows.filter((row) => !rowHasError(row) && row.issues.some((issue) => issue.severity === 'warning')).length,
   }
