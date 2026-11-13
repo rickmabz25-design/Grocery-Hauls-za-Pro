@@ -721,7 +721,7 @@ function WhatsNewTab() {
   const create = async () => {
     try {
       await apiPost('/api/admin/whatsnew', { ...form, storeId: form.storeId || null })
-      toast({ title: 'Post created ✨' })
+      toast({ title: 'Post saved in this browser ✨' })
       setForm({ title: '', description: '', tag: 'new', storeId: '', imageUrl: '' })
       load()
     } catch (e) {
@@ -742,6 +742,7 @@ function WhatsNewTab() {
 
   return (
     <div className="space-y-4">
+      {STATIC_MODE && <p className="rounded-xl border border-amber-800 bg-amber-950/30 p-3 text-xs leading-relaxed text-amber-200">Local-only mode: announcements are saved on this browser and appear here in this testing copy only. They are not broadcast to other users. A shared announcement needs to be added to the published catalogue and redeployed.</p>}
       <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-4">
         <h2 className="font-bold text-sm">Create a What&apos;s New post</h2>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 mt-3">
