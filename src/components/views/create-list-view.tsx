@@ -165,6 +165,11 @@ export function CreateListView() {
         localStorage.setItem('gh_shopping_mode', shoppingMode)
       } catch { /* ignore */ }
       const { list } = await apiPost<{ list: { id: string; name: string } }>('/api/lists', { name })
+      try {
+        const contexts = JSON.parse(localStorage.getItem('gh_list_context') || '{}')
+        contexts[list.id] = { province, shoppingMode, preferredStoreId, preferredStoreLabel: (shoppingMode === 'online' ? ONLINE_RETAILERS : stores).find((s) => s.id === preferredStoreId)?.name || '' }
+        localStorage.setItem('gh_list_context', JSON.stringify(contexts))
+      } catch { /* ignore */ }
       // Promo shortcuts are added only after the user has named and created the list.
       for (const productId of preAddPromoIds) {
         await apiPost(`/api/lists/${list.id}/items`, { productId, quantity: 1, source: 'promo' })
