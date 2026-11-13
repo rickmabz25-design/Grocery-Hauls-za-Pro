@@ -39,7 +39,7 @@ export function TopBar() {
           aria-label="Go to home"
         >
           <img
-            src="/brand/logo-tile.png"
+            src="/brand/groceryhaulz-mark.svg"
             alt="Grocery Hauls Pro za logo"
             className="h-9 w-9 rounded-[10px] shadow-sm"
           />
