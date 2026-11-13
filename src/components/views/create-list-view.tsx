@@ -144,18 +144,26 @@ export function CreateListView() {
     }
   }, [search, activeCat])
 
-  const ensureList = async (): Promise<string | null> => {
-    if (listId) return listId
-    const name = listName.trim() || 'My Grocery List'
+  const createNamedList = async () => {
+    const name = listName.trim()
+    if (!name) {
+      toast({ title: 'Name your list first', description: 'Enter a name before adding products.', variant: 'destructive' })
+      return
+    }
     try {
       const { list } = await apiPost<{ list: { id: string; name: string } }>('/api/lists', { name })
       setListId(list.id)
       setListName(list.name)
-      return list.id
+      toast({ title: 'List created', description: list.name })
     } catch (e) {
       toast({ title: 'Could not create list', description: (e as Error).message, variant: 'destructive' })
-      return null
     }
+  }
+
+  const ensureList = async (): Promise<string | null> => {
+    if (listId) return listId
+    toast({ title: 'Create and name your list first', variant: 'destructive' })
+    return null
   }
 
   const addProduct = async (p: ProductResult) => {
@@ -248,19 +256,30 @@ export function CreateListView() {
 
   const goCompare = () => {
     if (!listId) return
-    // remember chosen stores for the compare view
-    try {
-      sessionStorage.setItem('gh_compare_stores', JSON.stringify(selectedStores))
-    } catch {
-      /* ignore */
-    }
+    // Always compare every retailer in the catalogue; stale/partial browser selections
+    // must never hide stores from the comparison screen.
+    try { sessionStorage.setItem('gh_compare_stores', JSON.stringify(stores.map((s) => s.id))) } catch { /* ignore */ }
     setStoreSheetOpen(false)
-    openCompare(listId, listName || 'My Grocery List')
+    openCompare(listId, listName)
   }
 
   // web-sourced suggestions filtered by the user's search term
   const showManualAddHint =
     search.trim().length >= 2 && !searching && results.length === 0 && !activeCat
+
+  if (!listId) {
+    return (
+      <div className="px-4 pt-8 max-w-xl mx-auto">
+        <div className="rounded-3xl bg-white border border-zinc-100 shadow-sm p-5">
+          <div className="h-12 w-12 rounded-2xl bg-blue-50 text-blue-700 flex items-center justify-center text-2xl">🛒</div>
+          <h1 className="text-xl font-extrabold text-zinc-900 mt-3">Create your grocery list</h1>
+          <p className="text-sm text-zinc-500 mt-1">Give this shopping trip a name before adding products. Your list will be saved in this browser.</p>
+          <Input value={listName} onChange={(e) => setListName(e.target.value)} placeholder="e.g. November groceries, Black Friday" className="h-12 mt-4 text-base" aria-label="New grocery list name" onKeyDown={(e) => e.key === 'Enter' && createNamedList()} />
+          <Button onClick={createNamedList} disabled={!listName.trim()} className="w-full h-12 mt-3 bg-blue-600 hover:bg-blue-700 font-bold">Create list and add products</Button>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className="px-4 pt-4 max-w-xl mx-auto">
