@@ -25,7 +25,6 @@ const actions = [
 ] as const
 
 export function HomeView() {
-  const user = useApp((s) => s.user)
   const go = useApp((s) => s.go)
   const [stats, setStats] = useState<HomeStats | null>(null)
   const firstName = (user?.name || 'there').split(' ')[0]
