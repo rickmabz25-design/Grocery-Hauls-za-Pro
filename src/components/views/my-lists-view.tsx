@@ -14,6 +14,8 @@ import {
   Plus, Copy, Trash2, Pencil, CheckCircle, RotateCcw, BarChart3, CheckCheck, History,
 } from 'lucide-react'
 
+type StoreOption = { id: string; name: string }
+
 type ListSummary = {
   id: string
   name: string
@@ -29,6 +31,8 @@ type ListSummary = {
 
 export function MyListsView() {
   const [lists, setLists] = useState<ListSummary[]>([])
+  const [stores, setStores] = useState<StoreOption[]>([])
+  const [preferredStoreId, setPreferredStoreId] = useState('')
   const [loading, setLoading] = useState(true)
   const [createOpen, setCreateOpen] = useState(false)
   const [newName, setNewName] = useState('')
@@ -51,11 +55,23 @@ export function MyListsView() {
 
   useEffect(() => {
     load()
+    apiGet<{ stores: StoreOption[] }>('/api/stores').then((d) => {
+      setStores(d.stores)
+      try {
+        const saved = localStorage.getItem('gh_preferred_store') || ''
+        setPreferredStoreId(d.stores.some((s) => s.id === saved) ? saved : '')
+      } catch { /* ignore */ }
+    }).catch(() => {})
   }, [load])
 
   const create = async () => {
     if (!newName.trim()) return
+    if (!preferredStoreId) {
+      toast({ title: 'Choose your preferred store first', variant: 'destructive' })
+      return
+    }
     try {
+      try { localStorage.setItem('gh_preferred_store', preferredStoreId) } catch { /* ignore */ }
       const { list } = await apiPost<{ list: { id: string; name: string } }>('/api/lists', { name: newName.trim() })
       setCreateOpen(false)
       setNewName('')
@@ -195,9 +211,16 @@ export function MyListsView() {
         <DialogContent className="max-w-sm rounded-2xl">
           <DialogHeader>
             <DialogTitle className="text-left">New grocery list</DialogTitle>
-            <DialogDescription className="text-left">Give it a name you&apos;ll recognise.</DialogDescription>
+            <DialogDescription className="text-left">Choose your preferred store first, then give the list a name.</DialogDescription>
           </DialogHeader>
+          <label className="block text-xs font-semibold text-zinc-600" htmlFor="my-list-preferred-store">Preferred store</label>
+          <select id="my-list-preferred-store" value={preferredStoreId} onChange={(e) => { setPreferredStoreId(e.target.value); try { localStorage.setItem('gh_preferred_store', e.target.value) } catch { /* ignore */ } }} className="w-full h-11 rounded-lg border border-zinc-200 bg-white px-3 text-sm">
+            <option value="">Choose your preferred store…</option>
+            {stores.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+          </select>
+          <label className="block text-xs font-semibold text-zinc-600" htmlFor="my-list-name">List name</label>
           <Input
+            id="my-list-name"
             autoFocus
             value={newName}
             onChange={(e) => setNewName(e.target.value)}
@@ -205,7 +228,7 @@ export function MyListsView() {
             className="h-11"
             onKeyDown={(e) => e.key === 'Enter' && create()}
           />
-          <Button onClick={create} disabled={!newName.trim()} className="w-full h-11 bg-blue-600 hover:bg-blue-700 font-semibold">
+          <Button onClick={create} disabled={!newName.trim() || !preferredStoreId} className="w-full h-11 bg-blue-600 hover:bg-blue-700 font-semibold">
             <CheckCheck className="h-4 w-4 mr-1" /> Create list
           </Button>
         </DialogContent>
