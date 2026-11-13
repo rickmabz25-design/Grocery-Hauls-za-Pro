@@ -290,8 +290,16 @@ check('re-import updates existing product and promotion instead of duplicating',
 const updatedSearch = await GETLOCAL('/api/products?q=V15%20Local%20Import%20Test%20Product') as { results: Array<{ price: number }> }
 const updatedPromos = await GETLOCAL('/api/promos') as { promos: Array<{ productId: string; promoPrice: number }> }
 check('re-imported prices are reflected by local catalogue reads', updatedSearch.results[0]?.price === 18 && updatedPromos.promos.some(p => p.productId === importedSearch.results[0]?.id && p.promoPrice === 12))
+const multiBuyName = 'V15 Multi-buy Test Product'
+const multiBuyImport = await applyLocalCatalogueImport([{
+  name: multiBuyName, storeId: localStore.id, unit: '3 pack',
+  normalPrice: null, promoPrice: null, multiBuyQuantity: 3, multiBuyPrice: 39,
+  offerText: 'BUY THREE 39', startDate: importDateStart, endDate: importDateEnd,
+}])
+check('multi-buy offer is saved separately without a unit price or single-item promotion', multiBuyImport.productsCreated === 1 && multiBuyImport.multiBuyPromosCreated === 1 && multiBuyImport.promosCreated === 0 && multiBuyImport.pricesUpserted === 0)
 const exported = await exportLocalCatalogueSnapshot()
 check('catalogue export includes locally imported product and promotion', exported.products.some(p => p.name === importedName) && exported.promos.some(p => p.productId === importedSearch.results[0]?.id && p.promoPrice === 12))
+check('catalogue export includes the separate quantity-and-bundle multi-buy record', exported.multiBuyPromos.some(p => p.name === multiBuyName && p.quantity === 3 && p.bundlePrice === 39 && p.unitPrice === 13))
 localStorageShim.removeItem('grocery-hauls-catalogue-overrides-v1')
 
 console.log(`\n========== RESULTS: ${pass} passed, ${fail} failed ==========`)
