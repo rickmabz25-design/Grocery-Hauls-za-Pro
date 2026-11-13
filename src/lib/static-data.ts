@@ -119,7 +119,7 @@ export async function applyLocalCatalogueImport(rows: Array<{
       pricesUpserted++
     }
     if (row.promoPrice != null) {
-      if (row.normalPrice == null || !row.startDate || !row.endDate) throw new Error(`Promotion for ${row.name} needs normal price and valid start/end dates`)
+      if (!row.startDate || !row.endDate) throw new Error(`Promotion for ${row.name} needs valid start/end dates`)
       const existingOverride = promos.find((p) => p.productId === product.id && p.storeId === store.id && p.startDate?.slice(0, 10) === row.startDate && p.endDate?.slice(0, 10) === row.endDate)
       const existingBase = basePromos.promos.find((p) => p.productId === product.id && p.storeId === store.id && p.startDate?.slice(0, 10) === row.startDate && p.endDate?.slice(0, 10) === row.endDate)
       const existing = existingOverride || existingBase
@@ -127,8 +127,8 @@ export async function applyLocalCatalogueImport(rows: Array<{
         id: existing?.id || makeId(), productId: product.id, name: product.name, unit: product.unit,
         category: product.category, storeId: store.id, storeName: store.name, storeColor: store.color,
         promoPrice: row.promoPrice, normalPrice: row.normalPrice,
-        discount: Math.max(0, Math.round((1 - row.promoPrice / row.normalPrice) * 100)),
-        saved: Math.round((row.normalPrice - row.promoPrice) * 100) / 100,
+        discount: row.normalPrice != null && row.normalPrice > 0 ? Math.max(0, Math.round((1 - row.promoPrice / row.normalPrice) * 100)) : 0,
+        saved: row.normalPrice != null ? Math.round((row.normalPrice - row.promoPrice) * 100) / 100 : 0,
         startDate: `${row.startDate}T00:00:00.000Z`, endDate: `${row.endDate}T23:59:59.999Z`,
         createdAt: existing?.createdAt || nowIso(),
       }
