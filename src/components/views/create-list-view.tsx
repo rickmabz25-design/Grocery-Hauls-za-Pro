@@ -176,8 +176,8 @@ export function CreateListView() {
       toast({ title: 'Enter the product name', variant: 'destructive' })
       return
     }
-    if (Number.isNaN(price) || price <= 0) {
-      toast({ title: 'Enter the shelf price', description: 'Check the price tag in-store.', variant: 'destructive' })
+    if (manualPrice.trim() && (!Number.isFinite(price) || price < 0)) {
+      toast({ title: 'Check the price', description: 'Enter a valid positive price or leave it blank.', variant: 'destructive' })
       return
     }
     const id = await ensureList()
@@ -185,7 +185,7 @@ export function CreateListView() {
     try {
       await apiPost(`/api/lists/${id}/items`, {
         name: manualName.trim(),
-        price,
+        price: manualPrice.trim() ? price : null,
         storeId: manualStore || null,
         source: 'manual',
       })
@@ -229,19 +229,11 @@ export function CreateListView() {
     }
   }
 
-  const runLookup = async () => {
-    if (!manualName.trim() || manualName.trim().length < 3) return
-    setLookupLoading(true)
-    try {
-      const data = await apiGet<{ suggestions: LookupSuggestion[] }>(
-        `/api/lookup?q=${encodeURIComponent(manualName.trim())}`
-      )
-      setLookup(data.suggestions)
-    } catch {
-      setLookup([])
-    } finally {
-      setLookupLoading(false)
-    }
+  const runLookup = () => {
+    if (!manualName.trim() || manualName.trim().length < 2) return
+    const retailer = stores.find((store) => store.id === manualStore)?.name || ''
+    const query = [manualName.trim(), retailer, 'price South Africa'].filter(Boolean).join(' ')
+    window.open(`https://www.google.com/search?q=${encodeURIComponent(query)}`, '_blank', 'noopener,noreferrer')
   }
 
   const totalItems = items.reduce((a, i) => a + i.quantity, 0)
@@ -472,7 +464,7 @@ export function CreateListView() {
 
       {/* Store selection sheet */}
       <Sheet open={storeSheetOpen} onOpenChange={setStoreSheetOpen}>
-        <SheetContent side="bottom" className="rounded-t-3xl max-h-[85vh]">
+        <SheetContent side="bottom" className="rounded-t-3xl max-h-[85dvh] flex flex-col overflow-hidden">
           <SheetHeader>
             <SheetTitle className="text-left flex items-center gap-2">
               <Store className="h-5 w-5 text-blue-600" /> Choose your stores
@@ -482,7 +474,16 @@ export function CreateListView() {
               your shopping between two stores.
             </SheetDescription>
           </SheetHeader>
-          <ScrollArea className="max-h-[40vh] mt-2">
+          <Button
+            onClick={goCompare}
+            disabled={selectedStores.length < 1}
+            className="w-full mt-3 h-12 shrink-0 bg-blue-600 hover:bg-blue-700 font-bold text-base"
+          >
+            <ShoppingBasket className="h-5 w-5 mr-2" /> Compare basket prices ({selectedStores.length} store
+            {selectedStores.length > 1 ? 's' : ''})
+          </Button>
+          <p className="text-[11px] text-zinc-500 mt-1">Select the stores you want to compare below.</p>
+          <ScrollArea className="mt-2 min-h-0 flex-1 max-h-[48dvh]">
             <div className="space-y-1.5 px-1">
               {stores.map((s) => {
                 const checked = selectedStores.includes(s.id)
@@ -520,14 +521,7 @@ export function CreateListView() {
               })}
             </div>
           </ScrollArea>
-          <Button
-            onClick={goCompare}
-            disabled={selectedStores.length < 1}
-            className="w-full mt-3 mb-4 h-12 bg-blue-600 hover:bg-blue-700 font-bold text-base"
-          >
-            <ShoppingBasket className="h-5 w-5 mr-2" /> Compare basket prices ({selectedStores.length} store
-            {selectedStores.length > 1 ? 's' : ''})
-          </Button>
+          <div className="h-2 shrink-0" />
         </SheetContent>
       </Sheet>
 
@@ -537,7 +531,7 @@ export function CreateListView() {
           <DialogHeader>
             <DialogTitle className="text-left">Add a product manually</DialogTitle>
             <DialogDescription className="text-left">
-              Step 1: choose the store where you saw it. Step 2: enter the name and shelf price.
+              Enter the product name. You can check Google for a price and add the price now or later.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-3">
@@ -577,8 +571,7 @@ export function CreateListView() {
               disabled={lookupLoading || manualName.trim().length < 3}
               className="w-full h-10 border-blue-300 text-blue-700 hover:bg-blue-50"
             >
-              <Globe className="h-4 w-4 mr-1.5" />
-              {lookupLoading ? 'Searching the web…' : 'Find price on the web (Google Search)'}
+              <Globe className="h-4 w-4 mr-1.5" /> Open Google search in a new tab
             </Button>
             {lookup && (
               <div className="space-y-1.5">
@@ -616,7 +609,7 @@ export function CreateListView() {
                 step="0.01"
                 value={manualPrice}
                 onChange={(e) => setManualPrice(e.target.value)}
-                placeholder="e.g. 44.99"
+                placeholder="Optional — enter price when known"
                 className="h-11 mt-1"
               />
             </div>
