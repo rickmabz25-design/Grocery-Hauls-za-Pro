@@ -609,6 +609,7 @@ export function CreateListView() {
             >
               <Globe className="h-4 w-4 mr-1.5" /> Open Google search in a new tab
             </Button>
+            <p className="text-[11px] text-zinc-500 -mt-1">Google opens separately. Check the matching store, product and size, then enter the displayed price below. The app does not automatically read prices from Google.</p>
             {lookup && (
               <div className="space-y-1.5">
                 {lookup.length === 0 && (
