@@ -467,7 +467,7 @@ export function LocalCatalogueImport() {
           </select>
         </label>)}
       </div>
-      <Button onClick={review} disabled={!mapping.name || (!mapping.normalPrice && !mapping.promoPrice)} className="bg-sky-600 hover:bg-sky-700">Review rows</Button>
+      <Button onClick={review} disabled={!mapping.name || (!mapping.normalPrice && !mapping.promoPrice && !mapping.promoOffer)} className="bg-sky-600 hover:bg-sky-700">Review rows</Button>
     </section>}
 
     {rows.length > 0 && <section className="rounded-2xl border border-zinc-800 bg-zinc-900 p-5 space-y-3">
