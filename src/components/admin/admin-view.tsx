@@ -74,7 +74,7 @@ export function AdminView() {
       <header className="bg-zinc-900 border-b border-zinc-800 px-4 py-3 flex items-center justify-between sticky top-0 z-30">
         <div className="flex items-center gap-2.5">
           <img
-            src="/brand/logo-tile.png"
+            src="/brand/groceryhaulz-mark.svg"
             alt="Grocery Hauls Pro za logo"
             className="h-9 w-9 rounded-[10px] shadow-sm shrink-0"
           />
@@ -159,7 +159,7 @@ function AdminLogin({ onLogin, onExit }: { onLogin: (email: string) => void; onE
       <div className="w-full max-w-sm bg-zinc-900 border border-zinc-800 rounded-3xl p-6">
         <div className="text-center mb-5">
           <img
-            src="/brand/logo-tile.png"
+            src="/brand/groceryhaulz-mark.svg"
             alt="Grocery Hauls Pro za logo"
             className="h-16 w-16 rounded-2xl shadow-md mx-auto mb-3"
           />
