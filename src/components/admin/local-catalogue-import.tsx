@@ -18,7 +18,7 @@ type FlyerCandidate = { id: number; name: string; normalPrice: string; promoPric
 const fields = [
   ['name', 'Product name *'], ['store', 'Store (optional if default selected)'],
   ['unit', 'Size / pack'], ['normalPrice', 'Normal price'], ['promoPrice', 'Promo price'],
-  ['promoOffer', 'Promotion offer / multi-buy text'],
+  ['promoOffer', 'Promotion offer / multi-buy text'], ['notes', 'Notes / flyer details'],
   ['startDate', 'Promotion start'], ['endDate', 'Promotion end'],
   ['category', 'Category'], ['barcode', 'Barcode'], ['brand', 'Brand'],
 ] as const
@@ -296,7 +296,7 @@ export function LocalCatalogueImport() {
     if (!file) return
     const coreMap = {
       name: mapping.name, store: mapping.store, unit: mapping.unit,
-      normalPrice: mapping.normalPrice, promoPrice: mapping.promoPrice, promoOffer: mapping.promoOffer,
+      normalPrice: mapping.normalPrice, promoPrice: mapping.promoPrice, promoOffer: mapping.promoOffer, notes: mapping.notes,
       startDate: mapping.startDate, endDate: mapping.endDate,
     }
     const storeName = stores.find(s => s.id === defaultStore)?.name
@@ -482,6 +482,7 @@ export function LocalCatalogueImport() {
           <div className="flex items-start justify-between gap-2"><b>{row.name || '(missing product name)'}</b><span className={rowHasError(row) ? 'text-red-400' : 'text-lime-400'}>{rowHasError(row) ? 'Needs correction' : 'Ready'}</span></div>
           <p className="mt-1 text-zinc-400">{row.storeName} · Normal {row.normalPrice == null ? '—' : `R${row.normalPrice.toFixed(2)}`} · Promo {row.promoPrice == null ? '—' : `R${row.promoPrice.toFixed(2)}`}</p>
           {row.promoOffer && <p className="mt-1 text-sky-300">Flyer offer: {row.promoOffer}</p>}
+          {row.notes && <p className="mt-1 text-zinc-400">Notes: {row.notes}</p>}
           {row.issues.map((issue, i) => <p key={i} className={issue.severity === 'error' ? 'mt-1 text-red-400' : 'mt-1 text-amber-300'}>{issue.severity.toUpperCase()}: {issue.message}</p>)}
         </div>)}
       </div>
