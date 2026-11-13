@@ -8,7 +8,7 @@ import { formatZAR } from '@/lib/format'
 import type { CompareResult } from '@/lib/server/compare'
 import { Button } from '@/components/ui/button'
 import {
-  SplitSquareHorizontal, Car, Save, CheckCircle2, Store, ShoppingBasket, TrendingDown, ExternalLink,
+  SplitSquareHorizontal, Car, CheckCircle2, Store, ShoppingBasket, TrendingDown, ExternalLink, Copy, Check,
 } from 'lucide-react'
 
 export function SplitView() {
@@ -255,6 +255,34 @@ function SplitStoreCard({
   online: boolean
   shopUrl: string | null
 }) {
+  const [copied, setCopied] = useState(false)
+
+  const copyBasket = async () => {
+    const lines = [
+      `${label} — ${name}`,
+      '',
+      ...items.map((item) =>
+        `${item.quantity} x ${item.name}${item.unit ? ` (${item.unit})` : ''} — ${formatZAR(item.price)}`
+      ),
+      '',
+      `Basket total: ${formatZAR(cost)}`,
+      '',
+      'Prices are estimates. Confirm availability and prices with the retailer.',
+    ]
+    try {
+      await navigator.clipboard.writeText(lines.join('\\n'))
+      setCopied(true)
+      window.setTimeout(() => setCopied(false), 2500)
+      toast({ title: `${label} basket copied`, description: `Your ${name} item list is ready to paste.` })
+    } catch {
+      toast({
+        title: 'Could not copy basket',
+        description: 'Your browser blocked clipboard access. You can still read the item list below.',
+        variant: 'destructive',
+      })
+    }
+  }
+
   return (
     <div className="bg-white rounded-2xl border border-zinc-100 shadow-sm mt-3 overflow-hidden">
       <div className="flex items-center justify-between p-3.5 pb-2">
@@ -274,8 +302,18 @@ function SplitStoreCard({
         </div>
         <p className="font-extrabold text-zinc-900">{formatZAR(cost)}</p>
       </div>
-      {online && shopUrl && (
-        <div className="px-3.5 pb-3.5">
+      {online && (
+        <div className="px-3.5 pb-3.5 space-y-2">
+          <button
+            type="button"
+            onClick={copyBasket}
+            disabled={items.length === 0}
+            className="w-full inline-flex items-center justify-center gap-2 rounded-xl border-2 border-blue-200 bg-blue-50 hover:bg-blue-100 text-blue-800 font-bold text-sm py-3 disabled:opacity-50"
+          >
+            {copied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
+            {copied ? `${label} Basket Copied` : `Copy ${label} Basket`}
+          </button>
+          {shopUrl && (
           <a
             href={shopUrl}
             target="_blank"
@@ -284,7 +322,10 @@ function SplitStoreCard({
           >
             Go to {name} online <ExternalLink className="h-4 w-4" />
           </a>
-          <p className="text-[10px] text-zinc-400 text-center mt-1">Opens this retailer in a new tab. Repeat for the other shop to complete your split basket.</p>
+          )}
+          <p className="text-[10px] text-zinc-400 text-center">
+            Copy this itemised list, then use it while shopping at {name}. The retailer link opens its website; it does not automatically fill its cart.
+          </p>
         </div>
       )}
       <ul className="px-3.5 pb-3.5 space-y-1">
