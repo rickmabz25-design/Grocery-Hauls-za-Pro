@@ -107,8 +107,10 @@ const manual = (await POST(`/api/lists/${created.list.id}/items`, {
 })) as { item: { id: string; productId: null } }
 check('add manual item with store', Boolean(manual.item?.id) && manual.item.productId === null)
 
-const noPrice = await POST(`/api/lists/${created.list.id}/items`, { name: 'No price item' }).catch((e: Error) => e)
-check('manual item without price rejected', (noPrice as Error).message === 'Enter the shelf price from the price tag')
+const noPrice = (await POST(`/api/lists/${created.list.id}/items`, { name: 'No price item' })) as { item: { id: string; manualPrice: number | null } }
+check('manual item without price is saved for later pricing', Boolean(noPrice.item?.id) && noPrice.item.manualPrice === null)
+await DEL(`/api/lists/${created.list.id}/items?itemId=${noPrice.item.id}`)
+check('unpriced manual item can be removed', ((await GET(`/api/lists/${created.list.id}`)) as { items: unknown[] }).items.length === 2)
 
 await PATCH(`/api/lists/${created.list.id}/items`, { itemId: added.item.id, quantity: 1 })
 const afterQty = (await GET(`/api/lists/${created.list.id}`)) as {
