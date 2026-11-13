@@ -107,8 +107,9 @@ const manual = (await POST(`/api/lists/${created.list.id}/items`, {
 })) as { item: { id: string; productId: null } }
 check('add manual item with store', Boolean(manual.item?.id) && manual.item.productId === null)
 
-const noPrice = (await POST(`/api/lists/${created.list.id}/items`, { name: 'No price item' })) as { item: { id: string; manualPrice: number | null } }
+const noPrice = (await POST(`/api/lists/${created.list.id}/items`, { name: 'No price item', unit: '2L' })) as { item: { id: string; manualPrice: number | null; manualUnit: string | null } }
 check('manual item without price is saved for later pricing', Boolean(noPrice.item?.id) && noPrice.item.manualPrice === null)
+check('manual item size is saved with the list item', noPrice.item.manualUnit === '2L')
 await DEL(`/api/lists/${created.list.id}/items?itemId=${noPrice.item.id}`)
 check('unpriced manual item can be removed', ((await GET(`/api/lists/${created.list.id}`)) as { items: unknown[] }).items.length === 2)
 
@@ -227,14 +228,15 @@ console.log('7. Profile + Shop Mode')
 const profile = (await PATCH('/api/profile', { whatsappNumber: '082 123 4567', whatsappOptIn: true })) as { user: { whatsappNumber: string; whatsappOptIn: boolean } }
 check('profile saves normalized SA WhatsApp number', profile.user.whatsappNumber === '+27821234567' && profile.user.whatsappOptIn)
 
-const unpricedForShop = (await POST(`/api/lists/${created.list.id}/items`, { name: 'Shop Mode price sync test' })) as { item: { id: string; manualPrice: number | null } }
+const unpricedForShop = (await POST(`/api/lists/${created.list.id}/items`, { name: 'Shop Mode price sync test', unit: '1kg' })) as { item: { id: string; manualPrice: number | null; manualUnit: string | null } }
 const shopStoreId = priceStoreIds[0]
 const shopStart = (await POST('/api/shop/sessions', { storeId: shopStoreId, listId: created.list.id })) as { session: { id: string } }
 check('Shop Mode session starts from saved list', Boolean(shopStart.session?.id))
-const shopDetail = (await GET(`/api/shop/sessions/${shopStart.session.id}`)) as { items: Array<{ id: string; name: string; bought: boolean; source: string; price: number; listItemId?: string }>; summary: { itemsInBasket: number } }
+const shopDetail = (await GET(`/api/shop/sessions/${shopStart.session.id}`)) as { items: Array<{ id: string; name: string; unit?: string | null; bought: boolean; source: string; price: number; listItemId?: string }>; summary: { itemsInBasket: number } }
 check('Shop Mode preloads saved list items including unpriced manual item', shopDetail.items.length === 3 && shopDetail.summary.itemsInBasket === 3)
 const shopUnpriced = shopDetail.items.find((item) => item.name === 'Shop Mode price sync test')!
 check('unpriced saved manual item opens at zero for later entry', Boolean(shopUnpriced?.id) && shopUnpriced.price === 0 && shopUnpriced.source === 'manual')
+check('Shop Mode keeps the saved manual item size', shopUnpriced.unit === '1kg')
 await PATCH(`/api/shop/sessions/${shopStart.session.id}/items`, { itemId: shopDetail.items[0].id, bought: true })
 await PATCH(`/api/shop/sessions/${shopStart.session.id}/items`, { itemId: shopUnpriced.id, price: 12.34 })
 const afterShopPrice = (await GET(`/api/lists/${created.list.id}`)) as { items: Array<{ id: string; manualPrice: number | null; manualStoreId: string | null }> }
