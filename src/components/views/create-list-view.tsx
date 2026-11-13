@@ -313,7 +313,7 @@ export function CreateListView() {
                       {formatZAR(item.lowestPrice)} from {item.lowestStoreName} • not on promotion
                     </span>
                   ) : (
-                    <span className="text-[9px] text-zinc-500">manual item — {formatZAR(item.manualPrice ?? 0)}</span>
+                    <span className="text-[9px] text-zinc-500">{item.manualPrice == null ? 'manual item — price not entered' : `manual item — ${formatZAR(item.manualPrice)}`}</span>
                   )}
                 </div>
               </div>
