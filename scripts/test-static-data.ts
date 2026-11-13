@@ -172,28 +172,10 @@ check('compare returns result', Boolean(r?.stores?.length))
 check('itemCount = 2 (product + manual)', r.itemCount === 2)
 check('manual item only available at its store', r.stores.find((s) => s.storeId === stores[0].id)!.available === 2)
 
-// verify cheapest store: manual item (R44.99) sits at stores[0], so stores that
-// do not stock the manual item can win on total with just the product price.
-const MANUAL_PRICE = 44.99
-const expectedTotals = priceStoreIds.filter((id) => id === stores[0].id).map((id) => ({
-  id,
-  total: Math.round((withPrices.storePrices[id] + MANUAL_PRICE) * 100) / 100,
-}))
-const expectedCheapest = expectedTotals.reduce((a, b) => (b.total < a.total ? b : a))
-check(
-  'cheapest total matches expected store math',
-  r.cheapest?.storeId === expectedCheapest.id && r.cheapest?.total === expectedCheapest.total,
-  `expected ${expectedCheapest.id} @ R${expectedCheapest.total}, got ${r.cheapest?.storeId} @ R${r.cheapest?.total}`
-)
-check(
-  'cheapest flag set exactly once on cheapest store',
-  r.stores.filter((s) => s.cheapest).length === 1 && r.stores.find((s) => s.cheapest)!.storeId === expectedCheapest.id
-)
-
-if (r.split) {
-  check('split total <= cheapest single total', r.split.splitTotal <= r.split.cheapestSingleTotal + 0.001)
-  check('split saving = single - split', Math.abs(r.split.saving - (r.split.cheapestSingleTotal - r.split.splitTotal)) < 0.01)
-}
+// A single store has the manual price, so only one store can complete the basket.
+// The UI must not call that store cheapest without a second complete-basket option.
+check('no cheapest ranking when fewer than two stores can price the full basket', r.cheapest === null)
+check('no cheapest flag when there is no valid store-to-store comparison', r.stores.every((s) => !s.cheapest))
 
 // compare with an invalid store list
 const allStoresCmp = (await GET(`/api/lists/${created.list.id}/compare?stores=`)) as { result: { stores: Array<{ storeId: string }> } }
