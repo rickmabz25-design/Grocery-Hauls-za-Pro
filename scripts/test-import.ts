@@ -61,6 +61,9 @@ const flyerRows = buildReviewRows(
     { Product: 'Albany Brown Bread', Description: '3 x 700g', 'Price Offer': 'BUY THREE 39', Notes: 'Multi-buy' },
     { Product: 'Excella Sunflower Oil', Description: '2 x 2L', 'Price Offer': 'BUY TWO 135', Notes: 'Single 74.99' },
     { Product: 'KOO Baked Beans', Description: '4 x 400g', 'Price Offer': 'BUY FOUR 56', Notes: 'In tomato sauce' },
+    { Product: 'Lucky Star Instant Noodles', Description: '5 x (5 x 65g)', 'Price Offer': 'BUY FIVE 100', Notes: 'Multipack' },
+    { Product: 'Illovo Brown Sugar', Description: '2 x 2kg', 'Price Offer': 'BUY TWO 84', Notes: 'Single 47.99' },
+    { Product: 'Tastic Rice', Description: '2 x 2kg', 'Price Offer': 'BUY TWO 58', Notes: 'Single 34.99' },
   ],
   { name: flyerMap.name, unit: flyerMap.unit, promoOffer: flyerMap.promoOffer, notes: 'Notes' },
   { defaultStoreName: 'Boxer', defaultStart: '2026-11-09', defaultEnd: '2026-11-24' },
@@ -71,7 +74,10 @@ ok(flyerRows[1].multiBuyOffer && flyerRows[1].promoPrice === null, 'multi-buy of
 ok(flyerRows[1].multiBuyQuantity === 3 && flyerRows[1].multiBuyPrice === 39 && !rowHasError(flyerRows[1]), 'BUY THREE 39 is a valid bundle, not a single-item price')
 ok(flyerRows[2].multiBuyQuantity === 2 && flyerRows[2].multiBuyPrice === 135 && flyerRows[2].singleItemPrice === 74.99 && flyerRows[2].promoPrice === null, 'Excella bundle and single-item price are kept separate')
 ok(flyerRows[3].multiBuyQuantity === 4 && flyerRows[3].multiBuyPrice === 56 && !rowHasError(flyerRows[3]), 'BUY FOUR 56 is accepted as a structured multi-buy deal')
-ok(reviewSummary(flyerRows).multiBuyRows === 3, 'review summary counts three valid multi-buy deals')
+ok(flyerRows[4].multiBuyQuantity === 5 && flyerRows[4].multiBuyPrice === 100, 'BUY FIVE 100 is parsed')
+ok(flyerRows[5].multiBuyQuantity === 2 && flyerRows[5].multiBuyPrice === 84 && flyerRows[5].singleItemPrice === 47.99, 'Illovo bundle and single price are parsed separately')
+ok(flyerRows[6].multiBuyQuantity === 2 && flyerRows[6].multiBuyPrice === 58 && flyerRows[6].singleItemPrice === 34.99, 'Tastic bundle and single price are parsed separately')
+ok(reviewSummary(flyerRows).multiBuyRows === 6, 'review summary counts all six valid multi-buy deals')
 
 console.log('--- buildReviewRows flags ---')
 const ctx = {
