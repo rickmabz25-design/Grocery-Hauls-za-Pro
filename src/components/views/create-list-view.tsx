@@ -52,6 +52,8 @@ export function CreateListView() {
 
   const [listId, setListId] = useState<string | null>(activeListId)
   const [listName, setListName] = useState('')
+  const [preferredStoreId, setPreferredStoreId] = useState('')
+  const [manualUnit, setManualUnit] = useState('')
   const [items, setItems] = useState<ListItemT[]>([])
   const [stores, setStores] = useState<StoreT[]>([])
   const [categories, setCategories] = useState<CategoryT[]>([])
@@ -88,6 +90,10 @@ export function CreateListView() {
       .then((d) => {
         setStores(d.stores)
         setSelectedStores(d.stores.map((s) => s.id))
+        try {
+          const savedPreferred = localStorage.getItem('gh_preferred_store') || ''
+          setPreferredStoreId(d.stores.some((s) => s.id === savedPreferred) ? savedPreferred : '')
+        } catch { /* ignore */ }
       })
       .catch(() => {})
     apiGet<{ categories: CategoryT[] }>('/api/categories')
@@ -95,9 +101,12 @@ export function CreateListView() {
       .catch(() => {})
   }, [])
 
+  // Keep this view in sync when the user opens a saved list and chooses Add items.
   useEffect(() => {
-    if (listId) loadList(listId)
-  }, [listId, loadList])
+    setListId(activeListId)
+    if (activeListId) loadList(activeListId)
+    else { setItems([]); setListName('') }
+  }, [activeListId, loadList])
 
   // Search with debounce; category browse
   useEffect(() => {
@@ -127,11 +136,16 @@ export function CreateListView() {
 
   const createNamedList = async () => {
     const name = listName.trim()
+    if (!preferredStoreId) {
+      toast({ title: 'Choose your preferred store first', description: 'This helps us keep your preferred retailer visible in comparisons.', variant: 'destructive' })
+      return
+    }
     if (!name) {
       toast({ title: 'Name your list first', description: 'Enter a name before adding products.', variant: 'destructive' })
       return
     }
     try {
+      try { localStorage.setItem('gh_preferred_store', preferredStoreId) } catch { /* ignore */ }
       const { list } = await apiPost<{ list: { id: string; name: string } }>('/api/lists', { name })
       // Promo shortcuts are added only after the user has named and created the list.
       for (const productId of preAddPromoIds) {
@@ -167,6 +181,10 @@ export function CreateListView() {
 
   const addManual = async () => {
     const price = parseFloat(manualPrice)
+    if (!manualStore) {
+      toast({ title: 'Choose the store first', variant: 'destructive' })
+      return
+    }
     if (!manualName.trim()) {
       toast({ title: 'Enter the product name', variant: 'destructive' })
       return
@@ -180,6 +198,7 @@ export function CreateListView() {
     try {
       await apiPost(`/api/lists/${id}/items`, {
         name: manualName.trim(),
+        unit: manualUnit.trim() || null,
         price: manualPrice.trim() ? price : null,
         storeId: manualStore || null,
         source: 'manual',
@@ -187,6 +206,7 @@ export function CreateListView() {
       toast({ title: 'Added to list 🛒', description: manualName.trim() })
       setManualOpen(false)
       setManualName('')
+      setManualUnit('')
       setManualPrice('')
       setManualSearch('')
       setLookup(null)
@@ -227,7 +247,7 @@ export function CreateListView() {
   const runLookup = () => {
     if (!manualName.trim() || manualName.trim().length < 2) return
     const retailer = stores.find((store) => store.id === manualStore)?.name || ''
-    const query = [manualName.trim(), retailer, 'price South Africa'].filter(Boolean).join(' ')
+    const query = [retailer, manualName.trim(), manualUnit.trim(), 'price South Africa'].filter(Boolean).join(' ')
     window.open(`https://www.google.com/search?q=${encodeURIComponent(query)}`, '_blank', 'noopener,noreferrer')
   }
 
@@ -260,9 +280,15 @@ export function CreateListView() {
         <div className="rounded-3xl bg-white border border-zinc-100 shadow-sm p-5">
           <div className="h-12 w-12 rounded-2xl bg-blue-50 text-blue-700 flex items-center justify-center text-2xl">🛒</div>
           <h1 className="text-xl font-extrabold text-zinc-900 mt-3">Create your grocery list</h1>
-          <p className="text-sm text-zinc-500 mt-1">Give this shopping trip a name before adding products. Your list will be saved in this browser.</p>
-          <Input value={listName} onChange={(e) => setListName(e.target.value)} placeholder="e.g. November groceries, Black Friday" className="h-12 mt-4 text-base" aria-label="New grocery list name" onKeyDown={(e) => e.key === 'Enter' && createNamedList()} />
-          <Button onClick={createNamedList} disabled={!listName.trim()} className="w-full h-12 mt-3 bg-blue-600 hover:bg-blue-700 font-bold">Create list and add products</Button>
+          <p className="text-sm text-zinc-500 mt-1">Choose your main retailer first, then name this shopping trip. Your list will be saved in this browser.</p>
+          <label className="block text-xs font-semibold text-zinc-600 mt-4" htmlFor="new-list-preferred-store">1. Preferred store</label>
+          <select id="new-list-preferred-store" value={preferredStoreId} onChange={(e) => { setPreferredStoreId(e.target.value); try { localStorage.setItem('gh_preferred_store', e.target.value) } catch { /* ignore */ } }} className="w-full h-12 mt-1 rounded-lg border border-zinc-200 bg-white px-3 text-base">
+            <option value="">Choose your preferred store…</option>
+            {stores.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+          </select>
+          <label className="block text-xs font-semibold text-zinc-600 mt-3" htmlFor="new-list-name">2. List name</label>
+          <Input id="new-list-name" value={listName} onChange={(e) => setListName(e.target.value)} placeholder="e.g. November groceries, Black Friday" className="h-12 mt-1 text-base" aria-label="New grocery list name" onKeyDown={(e) => e.key === 'Enter' && createNamedList()} />
+          <Button onClick={createNamedList} disabled={!listName.trim() || !preferredStoreId} className="w-full h-12 mt-3 bg-blue-600 hover:bg-blue-700 font-bold">Create list and add products</Button>
         </div>
       </div>
     )
@@ -537,7 +563,7 @@ export function CreateListView() {
           <DialogHeader>
             <DialogTitle className="text-left">Add a product manually</DialogTitle>
             <DialogDescription className="text-left">
-              Enter the product name. You can check Google for a price and add the price now or later.
+              Choose the store, then enter the product name and size. Google opens a search; confirm the price yourself or leave it blank for Shop Mode.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-3">
@@ -570,6 +596,10 @@ export function CreateListView() {
                 placeholder="e.g. Jungle Oats 1kg"
                 className="h-11 mt-1"
               />
+            </div>
+            <div>
+              <label className="text-xs font-semibold text-zinc-500" htmlFor="manual-size">Size / pack</label>
+              <Input id="manual-size" value={manualUnit} onChange={(e) => setManualUnit(e.target.value)} placeholder="e.g. 2L, 5kg, 6-pack" className="h-11 mt-1" />
             </div>
             <Button
               variant="outline"
