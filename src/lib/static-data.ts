@@ -188,7 +188,7 @@ const enrichItem = (item: AnyRecord, products: AnyRecord[], stores: AnyRecord[],
   return {
     ...item,
     name: product?.name || item.manualName || 'Item',
-    unit: product?.unit ?? null,
+    unit: product?.unit ?? item.manualUnit ?? null,
     categoryIcon: product?.category?.icon || '🛒',
     categoryName: product?.category?.name ?? null,
     manualStoreName: manualStore?.name ?? null,
@@ -375,7 +375,7 @@ export async function handleStaticApi(method: string, path: string, body: AnyRec
       const promo = promos.filter((p) => p.productId === item.productId && p.storeId === store.id &&
         new Date(p.startDate) <= new Date() && new Date(p.endDate) >= new Date()).sort((a, b) => a.promoPrice - b.promoPrice)[0]
       const price = promo?.promoPrice ?? product?.storePrices?.[store.id] ?? (item.manualStoreId === store.id ? item.manualPrice : 0) ?? 0
-      return { id: id(), listItemId: item.id, productId: item.productId, name: product?.name || item.manualName || 'Item',
+      return { id: id(), listItemId: item.id, productId: item.productId, name: product?.name || item.manualName || 'Item', unit: product?.unit ?? item.manualUnit ?? null,
         price: number(price), promoPrice: promo?.promoPrice ?? null, quantity: item.quantity,
         bought: false, source: item.productId ? 'list' : 'manual' }
     })
@@ -563,7 +563,7 @@ export async function handleStaticApi(method: string, path: string, body: AnyRec
           const name = String(body?.name || '').trim(), price = body?.price == null ? null : Number(body.price)
           if (!name) fail('Enter the product name')
           if (price != null && (!Number.isFinite(price) || price < 0)) fail('Enter a valid shelf price')
-          item = { id: id(), listId, productId: null, manualName: name.slice(0, 80), manualPrice: price, manualStoreId: body.storeId || null, quantity, source: body.source ?? 'manual', note: null, createdAt: nowIso() }
+          item = { id: id(), listId, productId: null, manualName: name.slice(0, 80), manualUnit: body.unit == null ? null : String(body.unit).trim().slice(0, 40) || null, manualPrice: price, manualStoreId: body.storeId || null, quantity, source: body.source ?? 'manual', note: null, createdAt: nowIso() }
         }
         state.items.push(item); save(); return { item }
       }
