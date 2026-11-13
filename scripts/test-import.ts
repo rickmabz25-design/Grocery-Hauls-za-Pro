@@ -45,6 +45,24 @@ ok(m.name === 'Product Description', 'name -> Product Description')
 ok(m.promoPrice === 'Selling Price', 'promoPrice -> Selling Price (startsWith "selling"? no — includes check) ')
 ok(m.unit === 'Pack', 'unit -> Pack')
 ok(m.endDate === 'Valid To', 'endDate -> Valid To')
+const flyerMap = autoMap(['Product', 'Description', 'Price Offer', 'Notes'])
+ok(flyerMap.name === 'Product', 'flyer Product heading maps to product name')
+ok(flyerMap.unit === 'Description', 'flyer Description heading maps to size/pack')
+ok(flyerMap.promoOffer === 'Price Offer', 'flyer Price Offer heading maps to promotion offer')
+
+console.log('--- flyer offer handling ---')
+const flyerRows = buildReviewRows(
+  [
+    { Product: 'Kelloggs Corn Flakes', Description: '900g', 'Price Offer': '59.99', Notes: '' },
+    { Product: 'Albany Brown Bread', Description: '3 x 700g', 'Price Offer': 'BUY THREE 39', Notes: 'Multi-buy' },
+  ],
+  { name: flyerMap.name, unit: flyerMap.unit, promoOffer: flyerMap.promoOffer },
+  { defaultStoreName: 'Boxer', defaultStart: '2026-11-09', defaultEnd: '2026-11-24' },
+)
+ok(flyerRows[0].promoPrice === 59.99 && !flyerRows[0].multiBuyOffer, 'single flyer offer becomes a promo price')
+ok(flyerRows[0].normalPrice === null && flyerRows[0].startDate === '2026-11-09', 'single promo can omit normal price and inherit flyer dates')
+ok(flyerRows[1].multiBuyOffer && flyerRows[1].promoPrice === null, 'multi-buy offer is never mistaken for a single-item price')
+ok(flyerRows[1].issues.some(issue => issue.code === 'multi-buy-review' && issue.severity === 'error'), 'multi-buy offer is blocked for manual review')
 
 console.log('--- buildReviewRows flags ---')
 const ctx = {
