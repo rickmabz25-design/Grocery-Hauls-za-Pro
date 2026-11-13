@@ -14,6 +14,8 @@ type Store = { id: string; name: string; color?: string }
 type Category = { id: string; name: string; icon?: string }
 type ParsedFile = { headers: string[]; records: Record<string, unknown>[]; name: string; defaultStart?: string; defaultEnd?: string }
 type FlyerCandidate = { id: number; name: string; normalPrice: string; promoPrice: string; sourceLine: string }
+type FlyerProductText = { id: number; text: string }
+type FlyerPriceToken = { id: number; text: string; sourceLine: string }
 
 const fields = [
   ['name', 'Product name *'], ['store', 'Store (optional if default selected)'],
@@ -48,6 +50,10 @@ export function LocalCatalogueImport() {
   const [flyerOcrStatus, setFlyerOcrStatus] = useState('')
   const [flyerOcrText, setFlyerOcrText] = useState('')
   const [flyerCandidates, setFlyerCandidates] = useState<FlyerCandidate[]>([])
+  const [flyerProductLines, setFlyerProductLines] = useState<FlyerProductText[]>([])
+  const [flyerPriceTokens, setFlyerPriceTokens] = useState<FlyerPriceToken[]>([])
+  const [selectedFlyerProduct, setSelectedFlyerProduct] = useState('')
+  const [selectedFlyerPrice, setSelectedFlyerPrice] = useState('')
   const [mapping, setMapping] = useState<Record<string, string>>({})
   const [rows, setRows] = useState<ImportReviewRow[]>([])
   const [busy, setBusy] = useState(false)
@@ -130,7 +136,7 @@ export function LocalCatalogueImport() {
       toast({ title: 'Check flyer dates', description: 'The end date must be on or after the start date.', variant: 'destructive' })
       return
     }
-    setFlyerOcrBusy(true); setFlyerOcrStatus('Loading browser OCR…'); setFlyerCandidates([]); setFlyerOcrText('')
+    setFlyerOcrBusy(true); setFlyerOcrStatus('Loading browser OCR…'); setFlyerCandidates([]); setFlyerProductLines([]); setFlyerPriceTokens([]); setSelectedFlyerProduct(''); setSelectedFlyerPrice(''); setFlyerOcrText('')
     try {
       const image = new Image()
       image.crossOrigin = 'anonymous'
@@ -208,21 +214,16 @@ export function LocalCatalogueImport() {
           line.words.sort((a, b) => a.bbox.x0 - b.bbox.x0)
           line.text = line.words.map(word => word.text).join(' ').trim()
         })
-        // Accept only standalone currency/price tokens. Do not strip letters,
-        // percent signs or pack units: 180g, 37%, 10% and 250g are not prices.
+        // Extract descriptions and standalone price tokens separately. Do not
+        // pair them automatically: flyer layouts make proximity-based matches unsafe.
         const pricePattern = /^(?:R\s*)?\d{1,4}(?:[.,]\d{2})?$/i
-        const priceLines = grouped.flatMap(line => {
-          const found = line.words.map(word => {
-            const token = word.text.trim().replace(/^[.,:;!?()[\]{}]+|[.,:;!?()[\]{}]+$/g, '')
-            return pricePattern.test(token) ? token.replace(/^R\s*/i, '') : ''
-          }).filter(Boolean)
-          return found.map(price => ({ line, price }))
-        }).filter(item => {
-          const value = Number(item.price.replace(',', '.'))
-          return Number.isFinite(value) && value >= 10 && value <= 10000
-        })
-
-        // Keep only plausible product-description lines; discard short OCR fragments.
+        const priceTokens = grouped.flatMap(line => line.words.map(word => {
+          const token = word.text.trim().replace(/^[.,:;!?()[\]{}]+|[.,:;!?()[\]{}]+$/g, '')
+          if (!pricePattern.test(token)) return null
+          const value = Number(token.replace(/^R\s*/i, '').replace(',', '.'))
+          if (!Number.isFinite(value) || value < 10 || value > 10000) return null
+          return { text: token.replace(/^R\s*/i, ''), sourceLine: line.text }
+        }).filter((item): item is { text: string; sourceLine: string } => item !== null))
         const productLines = grouped.filter(line => {
           const tokens = line.text.split(/\s+/).filter(Boolean)
           const letters = line.text.match(/[\p{L}]/gu)?.length || 0
@@ -230,55 +231,38 @@ export function LocalCatalogueImport() {
           const letterRatio = letters / Math.max(1, line.text.length)
           return usefulTokens >= 2 && letters >= 7 && letterRatio >= 0.55
         })
-
-        // A price must sit close to, and horizontally align with, a description.
-        // Proximity alone is not enough: reject weak column matches rather than
-        // presenting a plausible-looking but unrelated product/price pair.
-        const candidates = priceLines.map((item, index) => {
-          const priceCenter = (item.line.x0 + item.line.x1) / 2
-          const lineWidth = Math.max(1, item.line.x1 - item.line.x0)
-          const nearest = productLines
-            .filter(line => Math.abs(item.line.y - line.y) >= medianHeight * 0.8)
-            .map(line => {
-              const productCenter = (line.x0 + line.x1) / 2
-              const productWidth = Math.max(1, line.x1 - line.x0)
-              const overlap = Math.max(0, Math.min(line.x1, item.line.x1) - Math.max(line.x0, item.line.x0))
-              const overlapRatio = overlap / Math.min(lineWidth, productWidth)
-              const centerDistance = Math.abs(priceCenter - productCenter)
-              const verticalDistance = Math.abs(item.line.y - line.y)
-              const maxCenterDistance = Math.max(medianHeight * 4, productWidth * 0.35)
-              const score = verticalDistance / medianHeight + centerDistance / Math.max(1, maxCenterDistance) * 5 - overlapRatio * 2
-              return { line, score, verticalDistance, centerDistance, overlapRatio, maxCenterDistance }
-            })
-            .filter(match =>
-              match.verticalDistance <= medianHeight * 6 &&
-              match.overlapRatio >= 0.35 &&
-              match.centerDistance <= match.maxCenterDistance,
-            )
-            .sort((a, b) => a.score - b.score)[0]
-          if (!nearest || nearest.score > 9) return null
-          const name = nearest.line.text
-            .replace(/\b(?:special|save|was|now|each|per|combo|buy|both)\b/gi, ' ')
-            .replace(/[^\p{L}\p{N} &'’()-]/gu, ' ')
-            .replace(/\s+/g, ' ').trim()
-          if (name.length < 8 || (name.match(/[\p{L}]/gu)?.length || 0) < 7) return null
-          return {
-            id: index + 1, name, normalPrice: '', promoPrice: item.price,
-            sourceLine: nearest.line.text + '  →  ' + item.line.text,
-          }
-        }).filter((row): row is NonNullable<typeof row> => row !== null)
-        const uniqueCandidates = candidates.filter((candidate, index, list) =>
-          list.findIndex(other => other.name === candidate.name && other.promoPrice === candidate.promoPrice) === index,
-        )
-        setFlyerCandidates(uniqueCandidates)
-        setFlyerOcrStatus(`Recognised ${lines.length} text lines and ${usableWords.length} positioned words; ${uniqueCandidates.length} conservative product/price suggestions found. Whole-number prices are included, but every match needs manual checking.`)
-        if (!uniqueCandidates.length) toast({ title: 'Text recognised, no safe product rows found', description: 'Use the recognised text below to check the flyer manually.', variant: 'destructive' })
+        const uniqueDescriptions = [...new Set(productLines.map(line => line.text.trim()).filter(Boolean))]
+        const productOptions = uniqueDescriptions.map((text, index) => ({ id: index + 1, text }))
+        const priceOptions = priceTokens.map((item, index) => ({ id: index + 1, text: item.text, sourceLine: item.sourceLine }))
+        setFlyerProductLines(productOptions)
+        setFlyerPriceTokens(priceOptions)
+        setSelectedFlyerProduct(productOptions[0] ? String(productOptions[0].id) : '')
+        setSelectedFlyerPrice(priceOptions[0] ? String(priceOptions[0].id) : '')
+        setFlyerCandidates([])
+        setFlyerOcrStatus(`Recognised ${lines.length} text lines and ${usableWords.length} positioned words; found ${productOptions.length} possible description lines and ${priceOptions.length} standalone price tokens. No product/price matches have been guessed — pair them manually below.`)
+        if (!productOptions.length || !priceOptions.length) toast({ title: 'Text recognised, manual pairing needs more OCR data', description: 'Use the complete recognised text below and check the flyer manually.', variant: 'destructive' })
       } finally { await worker.terminate() }
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Flyer text recognition failed.'
       setFlyerOcrStatus(message)
       toast({ title: 'Could not read flyer', description: message, variant: 'destructive' })
     } finally { setFlyerOcrBusy(false) }
+  }
+
+  const addManualFlyerPair = () => {
+    const product = flyerProductLines.find(item => String(item.id) === selectedFlyerProduct)
+    const price = flyerPriceTokens.find(item => String(item.id) === selectedFlyerPrice)
+    if (!product || !price) {
+      toast({ title: 'Choose both fields', description: 'Select a product description and a price from the separate OCR lists.', variant: 'destructive' })
+      return
+    }
+    setFlyerCandidates(list => [...list, {
+      id: list.length ? Math.max(...list.map(item => item.id)) + 1 : 1,
+      name: product.text,
+      normalPrice: '',
+      promoPrice: price.text,
+      sourceLine: `Description: ${product.text} · Price token: ${price.text} · OCR line: ${price.sourceLine}`,
+    }])
   }
 
   const useFlyerCandidates = () => {
@@ -421,17 +405,37 @@ export function LocalCatalogueImport() {
           </div>
           <Button type="button" onClick={runFlyerOcr} disabled={flyerOcrBusy || !flyerStartDate || !flyerEndDate} className="bg-sky-600 hover:bg-sky-700">{flyerOcrBusy ? 'Reading flyer…' : 'Read flyer text in browser'}</Button>
           {flyerOcrStatus && <p role="status" className="text-xs text-sky-300">{flyerOcrStatus}</p>}
-          {flyerCandidates.length > 0 && <div className="space-y-2 rounded-lg border border-zinc-700 p-3">
-            <p className="text-xs font-semibold text-white">Check the OCR suggestions — these may contain mistakes</p>
-            <div className="max-h-72 space-y-2 overflow-auto">
-              {flyerCandidates.map(row => <div key={row.id} className="grid grid-cols-1 gap-1 rounded-md bg-zinc-800 p-2 sm:grid-cols-[2fr_1fr_1fr]">
-                <input aria-label={`Product name ${row.id}`} value={row.name} onChange={e => setFlyerCandidates(list => list.map(item => item.id === row.id ? { ...item, name: e.target.value } : item))} className="rounded border border-zinc-700 bg-zinc-900 p-2 text-xs text-white" placeholder="Product name" />
-                <input aria-label={`Normal price ${row.id}`} value={row.normalPrice} onChange={e => setFlyerCandidates(list => list.map(item => item.id === row.id ? { ...item, normalPrice: e.target.value } : item))} className="rounded border border-zinc-700 bg-zinc-900 p-2 text-xs text-white" placeholder="Normal price" />
-                <input aria-label={`Promo price ${row.id}`} value={row.promoPrice} onChange={e => setFlyerCandidates(list => list.map(item => item.id === row.id ? { ...item, promoPrice: e.target.value } : item))} className="rounded border border-zinc-700 bg-zinc-900 p-2 text-xs text-white" placeholder="Promo price" />
-                <p className="text-[10px] text-zinc-500 sm:col-span-3">OCR: {row.sourceLine} · Check that this OCR text and price belong to the same product</p>
-              </div>)}
+          {(flyerProductLines.length > 0 || flyerPriceTokens.length > 0) && <div className="space-y-3 rounded-lg border border-zinc-700 p-3">
+            <p className="text-xs font-semibold text-white">Manually match product descriptions and prices</p>
+            <p className="text-[11px] leading-relaxed text-zinc-400">These are two separate OCR lists. The app does not decide which price belongs to which product. Check the flyer image, then choose the correct description and price yourself.</p>
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <label className="space-y-1 text-[10px] font-bold uppercase text-zinc-400">Product description
+                <select value={selectedFlyerProduct} onChange={e => setSelectedFlyerProduct(e.target.value)} className="w-full rounded border border-zinc-700 bg-zinc-900 p-2 text-xs font-normal normal-case text-white">
+                  <option value="">Choose recognised description</option>
+                  {flyerProductLines.map(item => <option key={item.id} value={item.id}>{item.text}</option>)}
+                </select>
+              </label>
+              <label className="space-y-1 text-[10px] font-bold uppercase text-zinc-400">Price token
+                <select value={selectedFlyerPrice} onChange={e => setSelectedFlyerPrice(e.target.value)} className="w-full rounded border border-zinc-700 bg-zinc-900 p-2 text-xs font-normal normal-case text-white">
+                  <option value="">Choose recognised price</option>
+                  {flyerPriceTokens.map(item => <option key={item.id} value={item.id}>R{item.text} — OCR: {item.sourceLine}</option>)}
+                </select>
+              </label>
             </div>
-            <Button type="button" onClick={useFlyerCandidates} className="bg-lime-600 hover:bg-lime-700">Use checked rows for column mapping</Button>
+            <Button type="button" variant="outline" onClick={addManualFlyerPair} disabled={!selectedFlyerProduct || !selectedFlyerPrice} className="border-sky-700 text-sky-200">Add this manually matched row</Button>
+            {flyerCandidates.length > 0 && <div className="space-y-2 border-t border-zinc-700 pt-3">
+              <p className="text-xs font-semibold text-white">Rows you have manually paired ({flyerCandidates.length})</p>
+              <div className="max-h-72 space-y-2 overflow-auto">
+                {flyerCandidates.map(row => <div key={row.id} className="grid grid-cols-1 gap-1 rounded-md bg-zinc-800 p-2 sm:grid-cols-[2fr_1fr_1fr_auto]">
+                  <input aria-label={`Product name ${row.id}`} value={row.name} onChange={e => setFlyerCandidates(list => list.map(item => item.id === row.id ? { ...item, name: e.target.value } : item))} className="rounded border border-zinc-700 bg-zinc-900 p-2 text-xs text-white" placeholder="Product name" />
+                  <input aria-label={`Normal price ${row.id}`} value={row.normalPrice} onChange={e => setFlyerCandidates(list => list.map(item => item.id === row.id ? { ...item, normalPrice: e.target.value } : item))} className="rounded border border-zinc-700 bg-zinc-900 p-2 text-xs text-white" placeholder="Normal price (optional)" />
+                  <input aria-label={`Promo price ${row.id}`} value={row.promoPrice} onChange={e => setFlyerCandidates(list => list.map(item => item.id === row.id ? { ...item, promoPrice: e.target.value } : item))} className="rounded border border-zinc-700 bg-zinc-900 p-2 text-xs text-white" placeholder="Promo price" />
+                  <Button type="button" variant="outline" onClick={() => setFlyerCandidates(list => list.filter(item => item.id !== row.id))} className="border-red-800 text-red-300">Remove</Button>
+                  <p className="text-[10px] text-zinc-500 sm:col-span-4">{row.sourceLine}</p>
+                </div>)}
+              </div>
+              <Button type="button" onClick={useFlyerCandidates} className="bg-lime-600 hover:bg-lime-700">Continue with manually matched rows</Button>
+            </div>}
           </div>}
           {flyerOcrText && <details className="rounded-lg border border-zinc-700 p-2"><summary className="cursor-pointer text-xs text-zinc-300">Show all recognised flyer text</summary><textarea readOnly value={flyerOcrText} rows={8} className="mt-2 w-full rounded bg-zinc-950 p-2 text-xs text-zinc-300" /></details>}
           <p className="text-xs text-sky-300">Flyer page preview — enter the promotion dates, then run browser OCR. OCR suggestions must be checked manually.</p>
