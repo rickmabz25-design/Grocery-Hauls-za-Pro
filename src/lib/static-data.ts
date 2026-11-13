@@ -443,9 +443,29 @@ export async function handleStaticApi(method: string, path: string, body: AnyRec
     }
   }
 
+  const localWhatsNewKey = 'grocery-hauls-whats-new-local-v1'
+  const readLocalWhatsNew = (): AnyRecord[] => {
+    if (typeof window === 'undefined') return []
+    try { const value = JSON.parse(window.localStorage.getItem(localWhatsNewKey) || '[]'); return Array.isArray(value) ? value : [] } catch { return [] }
+  }
+  const writeLocalWhatsNew = (posts: AnyRecord[]) => { if (typeof window === 'undefined') fail('Announcements can only be saved in this browser'); window.localStorage.setItem(localWhatsNewKey, JSON.stringify(posts)) }
+  if (pathname === '/api/admin/whatsnew') {
+    const posts = readLocalWhatsNew()
+    if (verb === 'GET') return { posts: posts.map(post => ({ ...post, promoCount: 0 })) }
+    if (verb === 'POST') {
+      const title = String(body?.title || '').trim(), description = String(body?.description || '').trim()
+      if (!title || !description) fail('Add a title and description before publishing')
+      const stores = await getStores(), store = stores.find((item: AnyRecord) => item.id === body.storeId)
+      const post = { id: `local_post_${Date.now().toString(36)}`, title: title.slice(0,100), description: description.slice(0,1200), imageUrl: String(body?.imageUrl || '').trim() || null, tag: String(body?.tag || 'new'), datePosted: nowIso(), storeName: store?.name || null, storeColor: store?.color || null, promos: [], promoCount: 0, active: true }
+      posts.unshift(post); writeLocalWhatsNew(posts); return { post }
+    }
+    if (verb === 'PATCH') { const post = posts.find(item => item.id === body?.id); if (post) post.active = Boolean(body.active); writeLocalWhatsNew(posts); return { ok: true } }
+    if (verb === 'DELETE') { writeLocalWhatsNew(posts.filter(item => item.id !== query.get('id'))); return { ok: true } }
+  }
+
   if (verb === 'GET' && pathname === '/api/stores') return { stores: await getStores() }
   if (verb === 'GET' && pathname === '/api/categories') return { categories: await getCategories() }
-  if (verb === 'GET' && pathname === '/api/whats-new') return jsonFile('/data/whats-new.json')
+  if (verb === 'GET' && pathname === '/api/whats-new') { const base = await jsonFile<{ posts: AnyRecord[] }>('/data/whats-new.json'); const local = readLocalWhatsNew().filter(post => post.active !== false); return { posts: [...local, ...(base.posts || [])] } }
   if (verb === 'GET' && pathname === '/api/promos') {
     const promos = (await getPromos(ctx)).filter((p) => new Date(p.startDate) <= new Date() && new Date(p.endDate) >= new Date())
     const store = query.get('store'), category = query.get('category'), sort = query.get('sort') || 'discount'
