@@ -1,5 +1,5 @@
 // Unit tests for the Phase 2 import pipeline (run: bun scripts/test-import.ts)
-import { parsePrice, parseDate, buildReviewRows, reviewSummary, rowHasError, autoMap, normName, pubKey, isLikelyUnstructuredFlyer } from '../src/lib/import-review'
+import { parsePrice, parseDate, parseMultiBuyOffer, parseSingleItemPrice, buildReviewRows, reviewSummary, rowHasError, autoMap, normName, pubKey, isLikelyUnstructuredFlyer } from '../src/lib/import-review'
 
 let pass = 0
 let fail = 0
@@ -21,6 +21,10 @@ ok(parsePrice('') === null, 'empty -> null')
 ok(parsePrice('n/a') === null, 'n/a -> null')
 ok(parsePrice('-5') === null, 'negative rejected (non-finite check via >= 0)') // -5 is < 0 -> null
 ok(parsePrice('84.97') === 84.97, 'plain number')
+ok(parseMultiBuyOffer('BUY THREE 39')?.quantity === 3 && parseMultiBuyOffer('BUY THREE 39')?.bundlePrice === 39, 'BUY THREE 39 -> 3 for R39')
+ok(parseMultiBuyOffer('BUY TWO 135')?.quantity === 2 && parseMultiBuyOffer('BUY TWO 135')?.bundlePrice === 135, 'BUY TWO 135 -> 2 for R135')
+ok(parseMultiBuyOffer('4 FOR R56')?.quantity === 4 && parseMultiBuyOffer('4 FOR R56')?.bundlePrice === 56, '4 FOR R56 -> 4 for R56')
+ok(parseSingleItemPrice('Single 74.99') === 74.99, 'single-item price extracted from flyer notes')
 
 console.log('--- parseDate ---')
 ok(parseDate('15/10/2026') === '2026-10-15', 'dd/mm/yyyy (SA style)')
@@ -55,14 +59,19 @@ const flyerRows = buildReviewRows(
   [
     { Product: 'Kelloggs Corn Flakes', Description: '900g', 'Price Offer': '59.99', Notes: '' },
     { Product: 'Albany Brown Bread', Description: '3 x 700g', 'Price Offer': 'BUY THREE 39', Notes: 'Multi-buy' },
+    { Product: 'Excella Sunflower Oil', Description: '2 x 2L', 'Price Offer': 'BUY TWO 135', Notes: 'Single 74.99' },
+    { Product: 'KOO Baked Beans', Description: '4 x 400g', 'Price Offer': 'BUY FOUR 56', Notes: 'In tomato sauce' },
   ],
-  { name: flyerMap.name, unit: flyerMap.unit, promoOffer: flyerMap.promoOffer },
+  { name: flyerMap.name, unit: flyerMap.unit, promoOffer: flyerMap.promoOffer, notes: 'Notes' },
   { defaultStoreName: 'Boxer', defaultStart: '2026-11-09', defaultEnd: '2026-11-24' },
 )
 ok(flyerRows[0].promoPrice === 59.99 && !flyerRows[0].multiBuyOffer, 'single flyer offer becomes a promo price')
 ok(flyerRows[0].normalPrice === null && flyerRows[0].startDate === '2026-11-09', 'single promo can omit normal price and inherit flyer dates')
 ok(flyerRows[1].multiBuyOffer && flyerRows[1].promoPrice === null, 'multi-buy offer is never mistaken for a single-item price')
-ok(flyerRows[1].issues.some(issue => issue.code === 'multi-buy-review' && issue.severity === 'error'), 'multi-buy offer is blocked for manual review')
+ok(flyerRows[1].multiBuyQuantity === 3 && flyerRows[1].multiBuyPrice === 39 && !rowHasError(flyerRows[1]), 'BUY THREE 39 is a valid bundle, not a single-item price')
+ok(flyerRows[2].multiBuyQuantity === 2 && flyerRows[2].multiBuyPrice === 135 && flyerRows[2].singleItemPrice === 74.99 && flyerRows[2].promoPrice === null, 'Excella bundle and single-item price are kept separate')
+ok(flyerRows[3].multiBuyQuantity === 4 && flyerRows[3].multiBuyPrice === 56 && !rowHasError(flyerRows[3]), 'BUY FOUR 56 is accepted as a structured multi-buy deal')
+ok(reviewSummary(flyerRows).multiBuyRows === 3, 'review summary counts three valid multi-buy deals')
 
 console.log('--- buildReviewRows flags ---')
 const ctx = {
