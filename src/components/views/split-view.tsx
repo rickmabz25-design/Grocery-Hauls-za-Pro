@@ -270,7 +270,7 @@ function SplitStoreCard({
       'Prices are estimates. Confirm availability and prices with the retailer.',
     ]
     try {
-      await navigator.clipboard.writeText(lines.join('\\n'))
+      await navigator.clipboard.writeText(lines.join('\n'))
       setCopied(true)
       window.setTimeout(() => setCopied(false), 2500)
       toast({ title: `${label} basket copied`, description: `Your ${name} item list is ready to paste.` })
