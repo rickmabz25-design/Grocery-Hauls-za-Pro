@@ -56,15 +56,16 @@ async function jsonFile<T>(path: string): Promise<T> {
   return response.json() as Promise<T>
 }
 const CATALOGUE_OVERRIDE_KEY = 'grocery-hauls-catalogue-overrides-v1'
-type CatalogueOverrides = { products: AnyRecord[]; promos: AnyRecord[] }
+type CatalogueOverrides = { products: AnyRecord[]; promos: AnyRecord[]; multiBuyPromos: AnyRecord[] }
 
 function readCatalogueOverrides(): CatalogueOverrides {
-  if (typeof window === 'undefined') return { products: [], promos: [] }
+  if (typeof window === 'undefined') return { products: [], promos: [], multiBuyPromos: [] }
   try {
     const parsed = JSON.parse(window.localStorage.getItem(CATALOGUE_OVERRIDE_KEY) || '{}')
     return {
       products: Array.isArray(parsed.products) ? parsed.products : [],
       promos: Array.isArray(parsed.promos) ? parsed.promos : [],
+      multiBuyPromos: Array.isArray(parsed.multiBuyPromos) ? parsed.multiBuyPromos : [],
     }
   } catch {
     return { products: [], promos: [] }
@@ -75,18 +76,22 @@ function readCatalogueOverrides(): CatalogueOverrides {
 export async function applyLocalCatalogueImport(rows: Array<{
   name: string; storeId: string; unit?: string; barcode?: string; brand?: string;
   categoryId?: string; normalPrice: number | null; promoPrice: number | null;
-  startDate?: string | null; endDate?: string | null;
+  multiBuyQuantity?: number | null; multiBuyPrice?: number | null; singleItemPrice?: number | null;
+  offerText?: string; startDate?: string | null; endDate?: string | null;
 }>) {
   if (typeof window === 'undefined') throw new Error('Catalogue imports require a browser')
   const [baseProducts, basePromos, stores, categories] = await Promise.all([jsonFile<{ products: AnyRecord[] }>('/data/products.json'), jsonFile<{ promos: AnyRecord[] }>('/data/promos.json'), getStores(), getCategories()])
   const overrides = readCatalogueOverrides()
   const products = [...overrides.products]
   const promos = [...overrides.promos]
-  let productsCreated = 0, productsUpdated = 0, pricesUpserted = 0, promosCreated = 0
+  const multiBuyPromos = [...overrides.multiBuyPromos]
+  let productsCreated = 0, productsUpdated = 0, pricesUpserted = 0, promosCreated = 0, multiBuyPromosCreated = 0
   const makeId = () => `local_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 9)}`
   for (const row of rows) {
     const store = stores.find((s) => s.id === row.storeId)
     if (!store) throw new Error(`Unknown store for ${row.name}`)
+    const hasMultiBuy = row.multiBuyQuantity != null && row.multiBuyPrice != null
+    if (hasMultiBuy && (!row.startDate || !row.endDate)) throw new Error(`Multi-buy offer for ${row.name} needs valid start/end dates`)
     const foundProduct = products.find((p) => p.name.toLowerCase() === row.name.toLowerCase()) ||
       baseProducts.products.find((p) => p.name.toLowerCase() === row.name.toLowerCase())
     let product = foundProduct
@@ -114,8 +119,9 @@ export async function applyLocalCatalogueImport(rows: Array<{
         if (category) { product.categoryId = category.id; product.category = { id: category.id, name: category.name, icon: category.icon || '🛒' } }
       }
     }
-    if (row.normalPrice != null) {
-      product.storePrices = { ...(product.storePrices || {}), [store.id]: row.normalPrice }
+    const singlePrice = row.singleItemPrice ?? row.normalPrice
+    if (singlePrice != null) {
+      product.storePrices = { ...(product.storePrices || {}), [store.id]: singlePrice }
       pricesUpserted++
     }
     if (row.promoPrice != null) {
@@ -135,9 +141,23 @@ export async function applyLocalCatalogueImport(rows: Array<{
       if (existingOverride) Object.assign(existingOverride, promo)
       else { promos.push(promo); if (!existingBase) promosCreated++ }
     }
+    if (hasMultiBuy) {
+      const existing = multiBuyPromos.find((p) => p.productId === product.id && p.storeId === store.id && p.startDate?.slice(0, 10) === row.startDate && p.endDate?.slice(0, 10) === row.endDate)
+      const offer = {
+        id: existing?.id || makeId(), productId: product.id, name: product.name, unit: product.unit,
+        category: product.category, storeId: store.id, storeName: store.name, storeColor: store.color,
+        quantity: row.multiBuyQuantity, bundlePrice: row.multiBuyPrice,
+        unitPrice: Math.round((row.multiBuyPrice! / row.multiBuyQuantity!) * 100) / 100,
+        singleItemPrice: row.singleItemPrice ?? null, offerText: row.offerText || null,
+        startDate: `${row.startDate}T00:00:00.000Z`, endDate: `${row.endDate}T23:59:59.999Z`,
+        createdAt: existing?.createdAt || nowIso(),
+      }
+      if (existing) Object.assign(existing, offer)
+      else { multiBuyPromos.push(offer); multiBuyPromosCreated++ }
+    }
   }
-  window.localStorage.setItem(CATALOGUE_OVERRIDE_KEY, JSON.stringify({ products, promos }))
-  return { productsCreated, productsUpdated, pricesUpserted, promosCreated, rowsProcessed: rows.length }
+  window.localStorage.setItem(CATALOGUE_OVERRIDE_KEY, JSON.stringify({ products, promos, multiBuyPromos }))
+  return { productsCreated, productsUpdated, pricesUpserted, promosCreated, multiBuyPromosCreated, rowsProcessed: rows.length }
 }
 
 /** Export a merged snapshot that can be reviewed and committed to public/data. */
@@ -146,12 +166,15 @@ export async function exportLocalCatalogueSnapshot() {
     jsonFile<{ products: AnyRecord[] }>('/data/products.json'),
     jsonFile<{ promos: AnyRecord[] }>('/data/promos.json'),
   ])
+  const baseMultiBuy = await jsonFile<{ multiBuyPromos?: AnyRecord[] }>('/data/multi-buy-promos.json').catch(() => ({ multiBuyPromos: [] }))
   const overrides = readCatalogueOverrides()
   const products = new Map<string, AnyRecord>(baseProducts.products.map((p): [string, AnyRecord] => [p.id, p]))
   overrides.products.forEach((p) => products.set(p.id, p))
   const promos = new Map<string, AnyRecord>(basePromos.promos.map((p): [string, AnyRecord] => [p.id, p]))
   overrides.promos.forEach((p) => promos.set(p.id, p))
-  return { products: [...products.values()], promos: [...promos.values()], exportedAt: nowIso() }
+  const multiBuyPromos = new Map<string, AnyRecord>((baseMultiBuy.multiBuyPromos || []).map((p): [string, AnyRecord] => [p.id, p]))
+  overrides.multiBuyPromos.forEach((p) => multiBuyPromos.set(p.id, p))
+  return { products: [...products.values()], promos: [...promos.values()], multiBuyPromos: [...multiBuyPromos.values()], exportedAt: nowIso() }
 }
 
 const getProducts = async () => {
