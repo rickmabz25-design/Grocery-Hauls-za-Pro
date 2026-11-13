@@ -23,6 +23,7 @@ type SessionItem = {
   quantity: number
   bought: boolean
   source: string
+  unit?: string | null
 }
 type SessionData = {
   session: {
@@ -61,6 +62,7 @@ export function ShopModeView() {
   const [scanning, setScanning] = useState(false)
   const [manualOpen, setManualOpen] = useState(false)
   const [manualName, setManualName] = useState('')
+  const [manualUnit, setManualUnit] = useState('')
   const [manualPrice, setManualPrice] = useState('')
   const videoRef = useRef<HTMLVideoElement | null>(null)
   const readerRef = useRef<{ reset: () => void } | null>(null)
@@ -164,12 +166,14 @@ export function ShopModeView() {
     try {
       await apiPost(`/api/shop/sessions/${session.session.id}/items`, {
         name: manualName.trim(),
+        unit: manualUnit.trim() || null,
         price: manualPrice ? Number(manualPrice) : undefined,
         source: 'manual',
       })
       toast({ title: 'Added to basket 🧺', description: manualName.trim() })
       setManualOpen(false)
       setManualName('')
+      setManualUnit('')
       setManualPrice('')
       await refresh(session.session.id)
     } catch (e) {
@@ -358,6 +362,7 @@ export function ShopModeView() {
                 <p className={`text-sm font-semibold truncate ${item.bought ? 'line-through text-zinc-400' : 'text-zinc-900'}`}>
                   {item.name}
                 </p>
+                {item.unit && <p className="text-[10px] text-zinc-400">{item.unit}</p>}
                 {item.source === 'manual' && (
                   <Input
                     key={`manual-price-${item.id}-${item.price}`}
@@ -471,6 +476,12 @@ export function ShopModeView() {
               value={manualName}
               onChange={(e) => setManualName(e.target.value)}
               placeholder="Product name"
+              className="h-11"
+            />
+            <Input
+              value={manualUnit}
+              onChange={(e) => setManualUnit(e.target.value)}
+              placeholder="Size / pack, e.g. 2L, 5kg, 6-pack"
               className="h-11"
             />
             <Input
