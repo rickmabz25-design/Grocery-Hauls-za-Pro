@@ -161,7 +161,7 @@ export function buildReviewRows(
     const multiBuyOffer = /\bBUY\s+(?:\d+|ONE|TWO|THREE|FOUR|FIVE|SIX|SEVEN|EIGHT|NINE|TEN)\b|\b(?:\d+|one|two|three|four|five|six|seven|eight|nine|ten)\s+FOR\s+R?\s*\d/i.test(promoOffer)
     const singleItemPrice = parseSingleItemPrice(notes)
     const explicitPromoPrice = parsePrice(mapping.promoPrice ? raw[mapping.promoPrice] : null)
-    const promoPrice = explicitPromoPrice ?? (multiBuyOffer ? singleItemPrice : (promoOffer ? parsePrice(promoOffer) : null))
+    const promoPrice = explicitPromoPrice ?? (multiBuyOffer ? null : (promoOffer ? parsePrice(promoOffer) : null))
     const startDate = parseDate(mapping.startDate ? raw[mapping.startDate] : null) || context.defaultStart || null
     const endDate = parseDate(mapping.endDate ? raw[mapping.endDate] : null) || context.defaultEnd || null
     const issues: ImportIssue[] = []
