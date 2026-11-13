@@ -23,16 +23,21 @@ export function CompareView() {
     // Always request every retailer. A previous partial selection in sessionStorage
     // must not make other stores disappear from the results.
     apiGet<{ stores: { id: string }[] }>('/api/stores')
-      .then((d) => runCompare(d.stores.map((s) => s.id)))
+      .then((d) => {
+        let savedPreferred = ''
+        try { savedPreferred = localStorage.getItem('gh_preferred_store') || '' } catch { /* ignore */ }
+        setPreferred(savedPreferred)
+        runCompare(d.stores.map((s) => s.id), savedPreferred)
+      })
       .catch(() => setLoading(false))
   }, [activeListId])
 
-  const runCompare = async (storeIds: string[]) => {
+  const runCompare = async (storeIds: string[], preferredId = preferred) => {
     if (!activeListId) return
     setLoading(true)
     try {
       const params = new URLSearchParams({ stores: storeIds.join(',') })
-      if (preferred) params.set('preferred', preferred)
+      if (preferredId) params.set('preferred', preferredId)
       const data = await apiGet<{ result: CompareResult }>(`/api/lists/${activeListId}/compare?${params}`)
       setResult(data.result)
     } catch (e) {
@@ -55,7 +60,7 @@ export function CompareView() {
   const changePreferred = (id: string) => {
     setPreferred(id)
     try {
-      sessionStorage.setItem('gh_preferred_store', id)
+      localStorage.setItem('gh_preferred_store', id)
     } catch { /* ignore */ }
     // Re-run across every retailer, changing only the preferred-store tie-break.
     setLoading(true)
@@ -69,6 +74,16 @@ export function CompareView() {
       .catch(() => {})
       .finally(() => setLoading(false))
   }
+
+  const orderedStores = result ? [...result.stores].sort((a, b) => {
+    if (a.storeId === preferred) return -1
+    if (b.storeId === preferred) return 1
+    if ((a.missing === 0) !== (b.missing === 0)) return a.missing === 0 ? -1 : 1
+    if (a.available !== b.available) return b.available - a.available
+    return a.total - b.total
+  }) : []
+  const featuredStores = orderedStores.slice(0, 3)
+  const otherStores = orderedStores.slice(3)
 
   return (
     <div className="px-4 pt-4 max-w-xl mx-auto pb-4">
@@ -102,10 +117,23 @@ export function CompareView() {
       {result && (
         <>
           <div className="space-y-2.5 mt-3">
-            {result.stores.map((s) => (
+            {featuredStores.map((s) => (
               <StoreCard key={s.storeId} s={s} itemCount={result.itemCount} />
             ))}
           </div>
+
+          {otherStores.length > 0 && (
+            <div className="mt-4 rounded-2xl border border-zinc-200 bg-white p-3">
+              <h2 className="text-sm font-extrabold text-zinc-800">Other stores — price check</h2>
+              <ul className="mt-2 space-y-2">
+                {otherStores.map((s) => (
+                  <li key={s.storeId} className="text-xs leading-relaxed text-zinc-700 border-t border-zinc-100 pt-2 first:border-0 first:pt-0">
+                    <span className="font-bold">{s.name}:</span> {s.missing === 0 ? `basket total ${formatZAR(s.total)}` : `priced items subtotal ${formatZAR(s.total)}`} — {s.available}/{result.itemCount} items priced{ s.missing > 0 ? `; missing ${s.missing}: ${s.missingNames.slice(0, 3).join(', ')}${s.missingNames.length > 3 ? '…' : ''}` : ''}.
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
 
           {result.cheapest && result.overallCheaperBy > 0 && (
             <div className="mt-4 rounded-2xl bg-sky-50 border border-sky-200 p-4 flex items-start gap-3">
