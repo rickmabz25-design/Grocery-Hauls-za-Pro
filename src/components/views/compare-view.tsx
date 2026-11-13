@@ -26,7 +26,7 @@ export function CompareView() {
     apiGet<{ stores: { id: string }[] }>('/api/stores')
       .then((d) => {
         let savedPreferred = ''
-        let context: { province?: string; shoppingMode?: string; preferredStoreLabel?: string } | null = null
+        let context: { province?: string; shoppingMode?: string; preferredStoreLabel?: string; preferredStoreId?: string } | null = null
         try {
           savedPreferred = localStorage.getItem('gh_preferred_store') || ''
           const contexts = JSON.parse(localStorage.getItem('gh_list_context') || '{}')
