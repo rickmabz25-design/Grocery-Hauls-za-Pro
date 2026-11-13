@@ -20,22 +20,11 @@ export function CompareView() {
 
   useEffect(() => {
     if (!activeListId) return
-    let storeIds: string[] = []
-    try {
-      const raw = sessionStorage.getItem('gh_compare_stores')
-      if (raw) storeIds = JSON.parse(raw)
-    } catch {
-      /* ignore */
-    }
-    if (!storeIds.length) {
-      // default: all stores
-      apiGet<{ stores: { id: string }[] }>('/api/stores')
-        .then((d) => d.stores.map((s) => s.id))
-        .then((ids) => runCompare(ids))
-        .catch(() => setLoading(false))
-      return
-    }
-    runCompare(storeIds)
+    // Always request every retailer. A previous partial selection in sessionStorage
+    // must not make other stores disappear from the results.
+    apiGet<{ stores: { id: string }[] }>('/api/stores')
+      .then((d) => runCompare(d.stores.map((s) => s.id)))
+      .catch(() => setLoading(false))
   }, [activeListId])
 
   const runCompare = async (storeIds: string[]) => {
@@ -68,21 +57,17 @@ export function CompareView() {
     try {
       sessionStorage.setItem('gh_preferred_store', id)
     } catch { /* ignore */ }
-    // re-run with preferred
-    let storeIds: string[] = []
-    try {
-      const raw = sessionStorage.getItem('gh_compare_stores')
-      if (raw) storeIds = JSON.parse(raw)
-    } catch { /* ignore */ }
-    if (storeIds.length) {
-      setLoading(true)
-      const params = new URLSearchParams({ stores: storeIds.join(',') })
-      if (id) params.set('preferred', id)
-      apiGet<{ result: CompareResult }>(`/api/lists/${activeListId}/compare?${params}`)
-        .then((d) => setResult(d.result))
-        .catch(() => {})
-        .finally(() => setLoading(false))
-    }
+    // Re-run across every retailer, changing only the preferred-store tie-break.
+    setLoading(true)
+    apiGet<{ stores: { id: string }[] }>('/api/stores')
+      .then((d) => {
+        const params = new URLSearchParams({ stores: d.stores.map((s) => s.id).join(',') })
+        if (id) params.set('preferred', id)
+        return apiGet<{ result: CompareResult }>(`/api/lists/${activeListId}/compare?${params}`)
+      })
+      .then((d) => setResult(d.result))
+      .catch(() => {})
+      .finally(() => setLoading(false))
   }
 
   return (
