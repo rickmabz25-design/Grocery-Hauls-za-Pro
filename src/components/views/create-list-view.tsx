@@ -258,7 +258,8 @@ export function CreateListView() {
       toast({ title: 'Your list is empty', description: 'Add a few products first.', variant: 'destructive' })
       return
     }
-    setStoreSheetOpen(true)
+    // Preferred store is already selected before list creation; compare all retailers directly.
+    goCompare()
   }
 
   const goCompare = () => {
