@@ -345,7 +345,7 @@ export function LocalCatalogueImport() {
     const csv = [
       'product_name,store,size,normal_price,promo_price,promo_start,promo_end,category,barcode,brand',
       '"Example long-life milk","Checkers","1L","18.99","15.99","2026-11-01","2026-11-14","Dairy","","Example Brand"',
-    ].join('\\n')
+    ].join('\n')
     const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }))
     const link = document.createElement('a'); link.href = url; link.download = 'groceryhaulz-import-template.csv'; link.click(); URL.revokeObjectURL(url)
   }
