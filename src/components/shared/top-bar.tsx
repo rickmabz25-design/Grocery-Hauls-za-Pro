@@ -5,7 +5,6 @@ import { useApp } from '@/lib/store'
 import { apiGet, apiPost } from '@/lib/api'
 import { initialsOf } from '@/lib/format'
 import { Bell, Menu, X } from 'lucide-react'
-import { Button } from '@/components/ui/button'
 
 export function TopBar() {
   const user = useApp((s) => s.user)
