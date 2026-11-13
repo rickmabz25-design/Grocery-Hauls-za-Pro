@@ -196,8 +196,9 @@ if (r.split) {
 }
 
 // compare with an invalid store list
-const badCmp = await GET(`/api/lists/${created.list.id}/compare?stores=`).catch((e: Error) => e)
-check('compare without stores rejected', (badCmp as Error).message === 'Select at least one store to compare')
+const allStoresCmp = (await GET(`/api/lists/${created.list.id}/compare?stores=`)) as { result: { stores: Array<{ storeId: string }> } }
+check('compare without a saved selection defaults to every retailer', allStoresCmp.result.stores.length === stores.length)
+check('compare supports the full retailer catalogue, not a seven-store cap', stores.length <= 7 || allStoresCmp.result.stores.length === stores.length)
 
 // =========================== 6. plan + duplicate + rename + status ===========================
 console.log('6. Plans, duplicate, rename, wishlist')
@@ -244,11 +245,21 @@ console.log('7. Profile + Shop Mode')
 const profile = (await PATCH('/api/profile', { whatsappNumber: '082 123 4567', whatsappOptIn: true })) as { user: { whatsappNumber: string; whatsappOptIn: boolean } }
 check('profile saves normalized SA WhatsApp number', profile.user.whatsappNumber === '+27821234567' && profile.user.whatsappOptIn)
 
-const shopStart = (await POST('/api/shop/sessions', { storeId: stores[0].id, listId: created.list.id })) as { session: { id: string } }
+const unpricedForShop = (await POST(`/api/lists/${created.list.id}/items`, { name: 'Shop Mode price sync test' })) as { item: { id: string; manualPrice: number | null } }
+const shopStoreId = priceStoreIds[0]
+const shopStart = (await POST('/api/shop/sessions', { storeId: shopStoreId, listId: created.list.id })) as { session: { id: string } }
 check('Shop Mode session starts from saved list', Boolean(shopStart.session?.id))
-const shopDetail = (await GET(`/api/shop/sessions/${shopStart.session.id}`)) as { items: Array<{ id: string; bought: boolean }>; summary: { itemsInBasket: number } }
-check('Shop Mode preloads saved list items', shopDetail.items.length === 2 && shopDetail.summary.itemsInBasket === 2)
+const shopDetail = (await GET(`/api/shop/sessions/${shopStart.session.id}`)) as { items: Array<{ id: string; name: string; bought: boolean; source: string; price: number; listItemId?: string }>; summary: { itemsInBasket: number } }
+check('Shop Mode preloads saved list items including unpriced manual item', shopDetail.items.length === 3 && shopDetail.summary.itemsInBasket === 3)
+const shopUnpriced = shopDetail.items.find((item) => item.name === 'Shop Mode price sync test')!
+check('unpriced saved manual item opens at zero for later entry', Boolean(shopUnpriced?.id) && shopUnpriced.price === 0 && shopUnpriced.source === 'manual')
 await PATCH(`/api/shop/sessions/${shopStart.session.id}/items`, { itemId: shopDetail.items[0].id, bought: true })
+await PATCH(`/api/shop/sessions/${shopStart.session.id}/items`, { itemId: shopUnpriced.id, price: 12.34 })
+const afterShopPrice = (await GET(`/api/lists/${created.list.id}`)) as { items: Array<{ id: string; manualPrice: number | null; manualStoreId: string | null }> }
+const savedShopPrice = afterShopPrice.items.find((item) => item.id === unpricedForShop.item.id)!
+check('Shop Mode price is written back to saved list item', savedShopPrice.manualPrice === 12.34 && savedShopPrice.manualStoreId === shopStoreId)
+const incompleteCmp = (await GET(`/api/lists/${created.list.id}/compare?stores=${stores.map((s) => s.id).join(',')}`)) as { result: { cheapest: { storeId: string } | null; stores: Array<{ cheapest: boolean; missing: number }> } }
+check('incomplete basket never receives a cheapest-store ranking', incompleteCmp.result.cheapest === null && incompleteCmp.result.stores.every((s) => !s.cheapest))
 const shopAfterBuy = (await GET(`/api/shop/sessions/${shopStart.session.id}`)) as { summary: { itemsBought: number } }
 check('Shop Mode marks items as bought', shopAfterBuy.summary.itemsBought === 1)
 const shopManual = (await POST(`/api/shop/sessions/${shopStart.session.id}/items`, { name: 'Water 1L', price: 9.99, source: 'manual' })) as { item: { id: string } }
