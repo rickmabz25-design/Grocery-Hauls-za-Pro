@@ -74,9 +74,21 @@ export function LocalCatalogueImport() {
       const workbook = XLSX.read(bytes, { type: 'array', cellDates: false })
       const sheet = workbook.Sheets[workbook.SheetNames[0]]
       if (!sheet) throw new Error('The workbook has no readable worksheet.')
-      const records = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet, { defval: '', raw: false })
-      if (!records.length) throw new Error('No data rows were found in the first worksheet.')
-      const headers = Object.keys(records[0])
+      // Detect the actual table heading row when workbooks include title/date rows.
+      const matrix = XLSX.utils.sheet_to_json<unknown[]>(sheet, { header: 1, defval: '', raw: false }) as unknown[][]
+      const normal = (value: unknown) => String(value ?? '').trim()
+      const headerIndex = matrix.slice(0, 25).findIndex(row => {
+        const cells = row.map(normal).filter(Boolean)
+        return cells.length >= 2 && cells.some(cell => /product|description|item|product name/i.test(cell)) && cells.some(cell => /price|promo|special/i.test(cell))
+      })
+      const index = headerIndex >= 0 ? headerIndex : matrix.findIndex(row => row.filter(cell => normal(cell)).length >= 2)
+      if (index < 0) throw new Error('No product table headings were found. Use a spreadsheet with one product per row.')
+      const rawHeaders = (matrix[index] || []).map((cell, i) => normal(cell) || `Column ${i + 1}`)
+      const headers = rawHeaders.map((name, i) => rawHeaders.indexOf(name) === i ? name : `${name} ${i + 1}`)
+      const records = matrix.slice(index + 1).filter(row => row.some(cell => normal(cell))).map(row =>
+        Object.fromEntries(headers.map((header, i) => [header, row[i] ?? ''])) as Record<string, unknown>
+      )
+      if (!records.length) throw new Error('The worksheet has headings but no product rows below them.')
       if (!headers.length) throw new Error('No column headings were found.')
       if (isLikelyUnstructuredFlyer(headers, records)) {
         setFileNotice('This file appears to contain a whole flyer as one block of OCR text, not a product table. The importer cannot safely tell which price belongs to which product, so it has stopped the import rather than create incorrect catalogue prices. Open the original Boxer catalogue, then use a properly structured spreadsheet with one product per row. Flyer image/PDF OCR extraction is not yet implemented.')
