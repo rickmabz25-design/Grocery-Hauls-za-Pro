@@ -17,7 +17,7 @@ export function CompareView() {
   const [result, setResult] = useState<CompareResult | null>(null)
   const [loading, setLoading] = useState(true)
   const [preferred, setPreferred] = useState('')
-  const [listContext, setListContext] = useState<{ province?: string; shoppingMode?: string; preferredStoreLabel?: string } | null>(null)
+  const [listContext, setListContext] = useState<{ province?: string; shoppingMode?: string; preferredStoreLabel?: string; preferredStoreId?: string } | null>(null)
 
   useEffect(() => {
     if (!activeListId) return
@@ -33,7 +33,8 @@ export function CompareView() {
           context = contexts[activeListId] || null
         } catch { /* ignore */ }
         setListContext(context)
-        const comparablePreferred = d.stores.some((s) => s.id === savedPreferred) ? savedPreferred : ''
+        const listPreferred = context?.preferredStoreId || savedPreferred
+        const comparablePreferred = d.stores.some((s) => s.id === listPreferred) ? listPreferred : ''
         setPreferred(comparablePreferred)
         runCompare(d.stores.map((s) => s.id), comparablePreferred)
       })
