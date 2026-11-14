@@ -376,10 +376,10 @@ export function LocalCatalogueImport() {
     }
   }
 
-  const restoreCatalogueBackup = () => {
+  const restoreCatalogueBackup = async () => {
     setBackupBusy(true); setBackupError(''); setBackupResult(null)
     try {
-      const result = importLocalCatalogueBackup(backupFiles)
+      const result = await importLocalCatalogueBackup(backupFiles)
       setBackupResult(result)
       toast({ title: 'Catalogue backup restored locally', description: `${result.productsImported} products, ${result.promosImported} promotions and ${result.multiBuyOffersImported} multi-buy offers merged into this browser.` })
     } catch (error) {
