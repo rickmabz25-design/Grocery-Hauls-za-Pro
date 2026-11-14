@@ -91,7 +91,7 @@ export async function applyLocalCatalogueImport(rows: Array<{
   const products = [...overrides.products]
   const promos = [...overrides.promos]
   const multiBuyPromos = [...overrides.multiBuyPromos]
-  let productsCreated = 0, productsUpdated = 0, pricesUpserted = 0, promosCreated = 0, multiBuyPromosCreated = 0
+  let productsCreated = 0, productsUpdated = 0, pricesUpserted = 0, promosCreated = 0, multiBuyPromosCreated = 0, multiBuyPromosUpdated = 0, multiBuyPromosProcessed = 0
   const makeId = () => `local_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 9)}`
   for (const row of rows) {
     const store = stores.find((s) => s.id === row.storeId)
@@ -148,6 +148,7 @@ export async function applyLocalCatalogueImport(rows: Array<{
       else { promos.push(promo); if (!existingBase) promosCreated++ }
     }
     if (hasMultiBuy) {
+      multiBuyPromosProcessed++
       const existing = multiBuyPromos.find((p) => p.productId === product.id && p.storeId === store.id && p.startDate?.slice(0, 10) === row.startDate && p.endDate?.slice(0, 10) === row.endDate)
       const offer = {
         id: existing?.id || makeId(), productId: product.id, name: product.name, unit: product.unit,
@@ -158,12 +159,16 @@ export async function applyLocalCatalogueImport(rows: Array<{
         startDate: `${row.startDate}T00:00:00.000Z`, endDate: `${row.endDate}T23:59:59.999Z`,
         createdAt: existing?.createdAt || nowIso(),
       }
-      if (existing) Object.assign(existing, offer)
+      if (existing) { Object.assign(existing, offer); multiBuyPromosUpdated++ }
       else { multiBuyPromos.push(offer); multiBuyPromosCreated++ }
     }
   }
   window.localStorage.setItem(CATALOGUE_OVERRIDE_KEY, JSON.stringify({ products, promos, multiBuyPromos }))
-  return { productsCreated, productsUpdated, pricesUpserted, promosCreated, multiBuyPromosCreated, rowsProcessed: rows.length }
+  const verified = readCatalogueOverrides()
+  const savedMultiBuyIds = new Set(verified.multiBuyPromos.map((offer) => offer.id))
+  const missingMultiBuy = multiBuyPromos.filter((offer) => !savedMultiBuyIds.has(offer.id))
+  if (missingMultiBuy.length) throw new Error(`The browser did not confirm saving ${missingMultiBuy.length} multi-buy offer(s). Your existing catalogue was not cleared; please keep this page open and contact support.`)
+  return { productsCreated, productsUpdated, pricesUpserted, promosCreated, multiBuyPromosCreated, multiBuyPromosUpdated, multiBuyPromosProcessed, multiBuyPromosStored: verified.multiBuyPromos.length, rowsProcessed: rows.length }
 }
 
 
