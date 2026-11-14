@@ -194,7 +194,7 @@ const getPromos = async (ctx?: StaticContext) => {
   overrides.forEach((p) => merged.set(p.id, p))
   return [...merged.values()]
 }
-const normalizeProductName = (value: unknown) => String(value || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim().replace(/\\s+/g, ' ')
+const normalizeProductName = (value: unknown) => String(value || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim().replace(/\s+/g, ' ')
 const findCatalogueProduct = (name: unknown, products: AnyRecord[]) => {
   const normalized = normalizeProductName(name)
   return normalized ? products.find((product) => normalizeProductName(product.name) === normalized) : undefined
