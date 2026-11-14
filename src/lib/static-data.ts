@@ -341,25 +341,37 @@ async function compareList(state: AnyRecord, listId: string, storeIds: string[],
   const effective = (productId: string, storeId: string) => {
     const product = products.find((p) => p.id === productId)
     const productNameKey = normalizeProductName(product?.name)
-    const normal = product?.storePrices?.[storeId]
     const now = new Date()
+    // A list line represents the imported pack (for example, 3 x 700g).
+    // Compare every retailer against that same pack size, not one loose unit
+    // at a retailer that has no multi-buy offer.
+    const activeOffers = multiBuyPromos.filter((p) =>
+      (p.productId === productId || (productNameKey && normalizeProductName(p.name) === productNameKey)) &&
+      new Date(p.startDate) <= now && new Date(p.endDate) >= now &&
+      Number(p.quantity) > 0 && Number(p.bundlePrice) > 0
+    )
+    const referenceOffer = activeOffers[0]
+    const bundleQuantity = referenceOffer ? Number(referenceOffer.quantity) : 1
+    const normalUnitPrice = product?.storePrices?.[storeId]
+    const multiBuy = activeOffers.filter((p) => p.storeId === storeId)
+      .sort((a, b) => Number(a.bundlePrice) / Number(a.quantity) - Number(b.bundlePrice) / Number(b.quantity))[0]
+    if (multiBuy) {
+      const bundlePrice = Number(multiBuy.bundlePrice)
+      const singlePrice = multiBuy.singleItemPrice == null ? normalUnitPrice : Number(multiBuy.singleItemPrice)
+      const normalBundlePrice = singlePrice == null ? bundlePrice : Number(singlePrice) * Number(multiBuy.quantity)
+      return { price: bundlePrice, normal: normalBundlePrice, promoPrice: bundlePrice }
+    }
     const promo = promos.filter((p) => p.productId === productId && p.storeId === storeId &&
       new Date(p.startDate) <= now && new Date(p.endDate) >= now)
       .sort((a, b) => a.promoPrice - b.promoPrice)[0]
-    if (promo) return { price: promo.promoPrice, normal: number(normal, promo.normalPrice), promoPrice: promo.promoPrice }
-    const multiBuy = multiBuyPromos.filter((p) =>
-      (p.productId === productId || (productNameKey && normalizeProductName(p.name) === productNameKey)) &&
-      p.storeId === storeId && new Date(p.startDate) <= now && new Date(p.endDate) >= now &&
-      Number(p.quantity) > 0 && Number(p.bundlePrice) > 0
-    ).sort((a, b) => Number(a.bundlePrice) / Number(a.quantity) - Number(b.bundlePrice) / Number(b.quantity))[0]
-    if (multiBuy) {
-      const bundlePrice = Number(multiBuy.bundlePrice)
-      const normalBundlePrice = multiBuy.singleItemPrice == null
-        ? bundlePrice
-        : Number(multiBuy.singleItemPrice) * Number(multiBuy.quantity)
-      return { price: bundlePrice, normal: normalBundlePrice, promoPrice: bundlePrice }
+    if (promo) {
+      const unitPrice = Number(promo.promoPrice)
+      const normal = number(normalUnitPrice, promo.normalPrice)
+      return { price: unitPrice * bundleQuantity, normal: normal * bundleQuantity, promoPrice: unitPrice * bundleQuantity }
     }
-    return normal == null ? null : { price: number(normal), normal: number(normal), promoPrice: null as number | null }
+    return normalUnitPrice == null
+      ? null
+      : { price: number(normalUnitPrice) * bundleQuantity, normal: number(normalUnitPrice) * bundleQuantity, promoPrice: null as number | null }
   }
   const storeResults = selected.map((store) => {
     let total = 0, savings = 0, fullTotal = 0, available = 0, notOnPromo = 0, onPromo = 0
@@ -432,12 +444,21 @@ async function compareList(state: AnyRecord, listId: string, storeIds: string[],
         assignments[index].push({ itemId: item.id, name: product?.name || item.manualName || 'Item', quantity: qty, unit: product?.unit ?? null, price: round(price), storeId: store!.id, storeName: store!.name, storeColor: store!.color })
         costs[index] += price
       }
-      const splitTotal = round(costs[0] + costs[1]), single = cheapest?.total ?? splitTotal
+      const splitTotal = round(costs[0] + costs[1])
+      // Use the cheapest complete basket as the baseline even when only one
+      // retailer can stock the full list. Partial-store subtotals are not a
+      // valid single-store comparison.
+      const completeBasket = ranked[0] || null
+      const single = completeBasket?.total ?? splitTotal
       const saving = round(single - splitTotal)
-      split = {
-        store1: { storeId: best.a.id, name: best.a.name, color: best.a.color, items: assignments[0], cost: round(costs[0]) },
-        store2: { storeId: best.b.id, name: best.b.name, color: best.b.color, items: assignments[1], cost: round(costs[1]) },
-        splitTotal, cheapestSingleTotal: single, saving, worthIt: saving > 0, travelWarning: saving > 0 && saving < 30,
+      // Do not present a two-store plan when every item is cheaper at one store.
+      if (assignments[0].length > 0 && assignments[1].length > 0) {
+        split = {
+          store1: { storeId: best.a.id, name: best.a.name, color: best.a.color, items: assignments[0], cost: round(costs[0]) },
+          store2: { storeId: best.b.id, name: best.b.name, color: best.b.color, items: assignments[1], cost: round(costs[1]) },
+          splitTotal, cheapestSingleTotal: single, cheapestSingleStoreName: completeBasket?.name ?? null,
+          saving, worthIt: saving > 0, travelWarning: saving > 0 && saving < 30,
+        }
       }
     }
   }
