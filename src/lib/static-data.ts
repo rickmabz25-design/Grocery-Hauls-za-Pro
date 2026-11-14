@@ -597,15 +597,30 @@ export async function handleStaticApi(method: string, path: string, body: AnyRec
   if (verb === 'GET' && pathname === '/api/categories') return { categories: await getCategories() }
   if (verb === 'GET' && pathname === '/api/whats-new') { const base = await jsonFile<{ posts: AnyRecord[] }>('/data/whats-new.json'); const local = readLocalWhatsNew().filter(post => post.active !== false); return { posts: [...local, ...(base.posts || [])] } }
   if (verb === 'GET' && pathname === '/api/promos') {
-    const [basePromos, baseMultiBuy] = await Promise.all([
+    const [basePromos, baseMultiBuy, products, categories] = await Promise.all([
       getPromos(ctx),
       jsonFile<{ multiBuyPromos?: AnyRecord[] }>('/data/multi-buy-promos.json').catch(() => ({ multiBuyPromos: [] })),
+      getProducts(),
+      getCategories(),
     ])
+    // Promotion snapshots can retain an older embedded category. Resolve the
+    // displayed category from the current product catalogue, with an explicit
+    // correction for the Boxer flyer sugar product.
+    const categoryForPromotion = (productId: string, name: string, fallback: AnyRecord) => {
+      const product = products.find((entry) => entry.id === productId)
+      if (String(name || product?.name || '').toLowerCase().includes('illovo brown sugar')) {
+        const sugarCategory = categories.find((entry) => entry.name === 'Sugar & Baking')
+        if (sugarCategory) return { id: sugarCategory.id, name: sugarCategory.name, icon: sugarCategory.icon || '🧁' }
+      }
+      return product?.category || fallback
+    }
     const overrides = readCatalogueOverrides()
     const multiBuyById = new Map<string, AnyRecord>((baseMultiBuy.multiBuyPromos || []).map((p): [string, AnyRecord] => [p.id, p]))
     overrides.multiBuyPromos.forEach((p) => multiBuyById.set(p.id, p))
     const now = new Date()
-    const activePromos = basePromos.filter((p) => new Date(p.startDate) <= now && new Date(p.endDate) >= now)
+    const activePromos = basePromos
+      .filter((p) => new Date(p.startDate) <= now && new Date(p.endDate) >= now)
+      .map((p) => ({ ...p, category: categoryForPromotion(p.productId, p.name, p.category) }))
     const activeMultiBuy = [...multiBuyById.values()]
       .filter((p) => new Date(p.startDate) <= now && new Date(p.endDate) >= now)
       .map((p) => {
@@ -615,7 +630,7 @@ export async function handleStaticApi(method: string, path: string, body: AnyRec
         const normalBundlePrice = singleItemPrice != null ? singleItemPrice * quantity : null
         return {
           id: p.id, productId: p.productId, name: p.name, unit: p.unit,
-          category: p.category || { id: 'other', name: 'Other', icon: '🛒' },
+          category: categoryForPromotion(p.productId, p.name, p.category || { id: 'other', name: 'Other', icon: '🛒' }),
           storeId: p.storeId, storeName: p.storeName, storeColor: p.storeColor,
           promoPrice: quantity > 0 ? bundlePrice / quantity : bundlePrice,
           normalPrice: singleItemPrice,
