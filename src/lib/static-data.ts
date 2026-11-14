@@ -72,6 +72,12 @@ function readCatalogueOverrides(): CatalogueOverrides {
   }
 }
 
+/** Counts persisted browser-local catalogue overrides; unlike the import toast, this survives page reloads. */
+export function getLocalCatalogueOverrideCounts() {
+  const saved = readCatalogueOverrides()
+  return { products: saved.products.length, promos: saved.promos.length, multiBuyPromos: saved.multiBuyPromos.length }
+}
+
 /** Apply reviewed import rows to this browser's shared catalogue overlay. */
 export async function applyLocalCatalogueImport(rows: Array<{
   name: string; storeId: string; unit?: string; barcode?: string; brand?: string;
