@@ -5,7 +5,7 @@
 import { useEffect, useState } from 'react'
 import * as XLSX from 'xlsx'
 import { autoMap, buildReviewRows, rowHasError, reviewSummary, isLikelyUnstructuredFlyer, type ImportReviewRow } from '@/lib/import-review'
-import { applyLocalCatalogueImport, exportLocalCatalogueSnapshot, importLocalCatalogueBackup } from '@/lib/static-data'
+import { applyLocalCatalogueImport, exportLocalCatalogueSnapshot, getLocalCatalogueOverrideCounts, importLocalCatalogueBackup } from '@/lib/static-data'
 import { Button } from '@/components/ui/button'
 import { toast } from '@/hooks/use-toast'
 import { Download, FileSpreadsheet, Upload } from 'lucide-react'
@@ -52,6 +52,7 @@ export function LocalCatalogueImport() {
   const [rows, setRows] = useState<ImportReviewRow[]>([])
   const [busy, setBusy] = useState(false)
   const [summary, setSummary] = useState<Awaited<ReturnType<typeof applyLocalCatalogueImport>> | null>(null)
+  const [savedCounts, setSavedCounts] = useState({ products: 0, promos: 0, multiBuyPromos: 0 })
   const [backupFiles, setBackupFiles] = useState<{ products?: unknown; promos?: unknown; multiBuyPromos?: unknown }>({})
   const [backupNames, setBackupNames] = useState<{ products: string; promos: string; multiBuyPromos: string }>({ products: '', promos: '', multiBuyPromos: '' })
   const [backupBusy, setBackupBusy] = useState(false)
@@ -59,6 +60,7 @@ export function LocalCatalogueImport() {
   const [backupError, setBackupError] = useState('')
 
   useEffect(() => {
+    setSavedCounts(getLocalCatalogueOverrideCounts())
     fetch('/data/stores.json').then(r => r.json()).then(d => {
       const list = Array.isArray(d.stores) ? d.stores : []
       setStores(list)
@@ -342,6 +344,7 @@ export function LocalCatalogueImport() {
       })
       const result = await applyLocalCatalogueImport(payload)
       setSummary(result)
+      setSavedCounts(getLocalCatalogueOverrideCounts())
       toast({ title: 'Local catalogue updated', description: `${result.rowsProcessed} rows saved locally, including ${result.multiBuyPromosCreated} multi-buy offers.` })
     } catch (error) {
       toast({ title: 'Import not saved', description: error instanceof Error ? error.message : 'Please review the file and try again.', variant: 'destructive' })
@@ -532,10 +535,12 @@ export function LocalCatalogueImport() {
       {counts.errors > 0 && <p className="text-xs text-amber-300">Correct the source file and review it again. Rows with errors are never imported.</p>}
     </section>}
 
-    {summary && <section className="rounded-2xl border border-lime-800 bg-lime-950/30 p-4 text-sm">
+    <section className="rounded-2xl border border-lime-800 bg-lime-950/30 p-4 text-sm">
       <h3 className="font-bold text-lime-300">Saved in this browser</h3>
-      <p className="mt-2 text-xs text-zinc-300">{summary.rowsProcessed} rows · {summary.productsCreated} new products · {summary.productsUpdated} existing products updated · {summary.pricesUpserted} single-item prices · {summary.promosCreated} single-item promotions · {summary.multiBuyPromosCreated} multi-buy offers</p>
-    </section>}
+      <p className="mt-2 text-xs text-zinc-300">{savedCounts.products} locally saved product records · {savedCounts.promos} single-item promotions · {savedCounts.multiBuyPromos} multi-buy offers.</p>
+      {summary && <p className="mt-1 text-xs text-zinc-400">Last save: {summary.rowsProcessed} rows · {summary.productsCreated} new products · {summary.productsUpdated} existing products updated · {summary.pricesUpserted} single-item prices · {summary.promosCreated} new single-item promotions · {summary.multiBuyPromosCreated} new multi-buy offers.</p>}
+      <p className="mt-1 text-[10px] text-zinc-500">These counts are read from this browser's saved catalogue and remain visible after you reopen this page.</p>
+    </section>
 
     <section className="rounded-2xl border border-sky-800 bg-sky-950/20 p-5 space-y-3">
       <div className="flex items-center gap-2"><Download className="h-5 w-5 text-sky-400" /><h3 className="font-bold text-sm">Restore a saved catalogue backup</h3></div>
