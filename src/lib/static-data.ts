@@ -608,10 +608,18 @@ export async function handleStaticApi(method: string, path: string, body: AnyRec
     // correction for the Boxer flyer sugar product.
     const categoryForPromotion = (productId: string, name: string, fallback: AnyRecord) => {
       const product = products.find((entry) => entry.id === productId)
-      if (String(name || product?.name || '').toLowerCase().includes('illovo brown sugar')) {
+      // Check both names: some saved promotion snapshots have a different
+      // display name from the linked catalogue product.
+      const names = [name, product?.name].filter(Boolean).map((value) => String(value).toLowerCase())
+      if (names.some((value) => value.includes('illovo brown sugar'))) {
         const sugarCategory = categories.find((entry) => entry.name === 'Sugar & Baking')
         if (sugarCategory) return { id: sugarCategory.id, name: sugarCategory.name, icon: sugarCategory.icon || '🧁' }
       }
+      // Always resolve the product's category ID against the current category
+      // catalogue instead of trusting an older embedded category snapshot.
+      const categoryId = product?.categoryId || product?.category?.id
+      const currentCategory = categories.find((entry) => entry.id === categoryId)
+      if (currentCategory) return { id: currentCategory.id, name: currentCategory.name, icon: currentCategory.icon || '🛒' }
       return product?.category || fallback
     }
     const overrides = readCatalogueOverrides()
