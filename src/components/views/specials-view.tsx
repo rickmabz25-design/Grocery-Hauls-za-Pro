@@ -24,6 +24,11 @@ type PromoCard = {
   discount: number
   saved: number
   endDate: string
+  multiBuyQuantity?: number
+  bundlePrice?: number
+  unitPrice?: number
+  singleItemPrice?: number | null
+  offerText?: string | null
 }
 
 type StoreT = { id: string; name: string; color: string }
@@ -184,14 +189,29 @@ export function SpecialsView() {
                       </p>
                     </div>
                     <span className="shrink-0 bg-lime-600 text-black text-[10px] font-extrabold rounded-full px-2 py-1">
-                      {p.discount}% OFF
+                      {p.multiBuyQuantity ? `${p.multiBuyQuantity} FOR ${formatZAR(p.bundlePrice ?? 0)}` : `${p.discount}% OFF`}
                     </span>
                   </div>
-                  <div className="flex items-baseline gap-2 mt-1.5">
-                    <span className="text-lg font-extrabold text-lime-700">{formatZAR(p.promoPrice)}</span>
-                    <span className="text-xs line-through text-zinc-400">{formatZAR(p.normalPrice)}</span>
-                    <span className="text-[10px] font-bold text-lime-600">Save {formatZAR(p.saved)}</span>
-                  </div>
+                  {p.multiBuyQuantity ? (
+                    <div className="mt-1.5">
+                      <div className="flex items-baseline gap-2">
+                        <span className="text-lg font-extrabold text-lime-700">{formatZAR(p.bundlePrice ?? 0)}</span>
+                        <span className="text-xs text-zinc-500">for {p.multiBuyQuantity}</span>
+                      </div>
+                      <div className="flex items-baseline gap-2">
+                        <span className="text-[11px] font-semibold text-zinc-600">{formatZAR(p.unitPrice ?? p.promoPrice)} each</span>
+                        {p.singleItemPrice != null && p.singleItemPrice > (p.unitPrice ?? p.promoPrice) && (
+                          <span className="text-[10px] line-through text-zinc-400">{formatZAR(p.singleItemPrice)} each normally</span>
+                        )}
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="flex items-baseline gap-2 mt-1.5">
+                      <span className="text-lg font-extrabold text-lime-700">{formatZAR(p.promoPrice)}</span>
+                      <span className="text-xs line-through text-zinc-400">{formatZAR(p.normalPrice)}</span>
+                      <span className="text-[10px] font-bold text-lime-600">Save {formatZAR(p.saved)}</span>
+                    </div>
+                  )}
                   <div className="flex items-center justify-between mt-1.5 gap-2">
                     <span
                       className="text-[10px] text-white rounded px-1.5 py-0.5 font-bold"
