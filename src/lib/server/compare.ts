@@ -46,6 +46,7 @@ export type SplitResult = {
   store2: { storeId: string; name: string; color: string; items: SplitAssignment[]; cost: number }
   splitTotal: number
   cheapestSingleTotal: number
+  cheapestSingleStoreName?: string | null
   saving: number
   worthIt: boolean
   travelWarning: boolean
