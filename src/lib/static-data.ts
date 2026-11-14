@@ -93,6 +93,14 @@ export async function applyLocalCatalogueImport(rows: Array<{
   const multiBuyPromos = [...overrides.multiBuyPromos]
   let productsCreated = 0, productsUpdated = 0, pricesUpserted = 0, promosCreated = 0, multiBuyPromosCreated = 0, multiBuyPromosUpdated = 0, multiBuyPromosProcessed = 0
   const makeId = () => `local_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 9)}`
+  const inferredCategoryFor = (name: string) => {
+    const normalized = name.toLowerCase()
+    const categoryName = normalized.includes('illovo brown sugar') ? 'Sugar & Baking'
+      : normalized.includes('excella sunflower oil') ? 'Cooking Oil & Staples'
+      : normalized.includes('ellis brown creamer') ? 'Eggs & Dairy'
+      : null
+    return categoryName ? categories.find((category) => category.name === categoryName) : undefined
+  }
   for (const row of rows) {
     const store = stores.find((s) => s.id === row.storeId)
     if (!store) throw new Error(`Unknown store for ${row.name}`)
@@ -106,7 +114,7 @@ export async function applyLocalCatalogueImport(rows: Array<{
       products.push(product)
     }
     if (!product) {
-      const category = categories.find((x) => x.id === row.categoryId) || categories[0]
+      const category = inferredCategoryFor(row.name) || categories.find((x) => x.id === row.categoryId) || categories[0]
       product = {
         id: makeId(), name: row.name, brand: row.brand || null, unit: row.unit || null,
         barcode: row.barcode || null, categoryId: category.id,
@@ -120,10 +128,8 @@ export async function applyLocalCatalogueImport(rows: Array<{
       if (row.unit) product.unit = row.unit
       if (row.barcode) product.barcode = row.barcode
       if (row.brand) product.brand = row.brand
-      if (row.categoryId) {
-        const category = categories.find((x) => x.id === row.categoryId)
-        if (category) { product.categoryId = category.id; product.category = { id: category.id, name: category.name, icon: category.icon || '🛒' } }
-      }
+      const category = inferredCategoryFor(row.name) || (row.categoryId ? categories.find((x) => x.id === row.categoryId) : undefined)
+      if (category) { product.categoryId = category.id; product.category = { id: category.id, name: category.name, icon: category.icon || '🛒' } }
     }
     const singlePrice = row.singleItemPrice ?? row.normalPrice
     if (singlePrice != null) {
