@@ -194,6 +194,12 @@ const getPromos = async (ctx?: StaticContext) => {
   overrides.forEach((p) => merged.set(p.id, p))
   return [...merged.values()]
 }
+const getMultiBuyPromos = async () => {
+  const base = await jsonFile<{ multiBuyPromos?: AnyRecord[] }>('/data/multi-buy-promos.json').catch(() => ({ multiBuyPromos: [] }))
+  const merged = new Map<string, AnyRecord>((base.multiBuyPromos || []).map((p): [string, AnyRecord] => [p.id, p]))
+  readCatalogueOverrides().multiBuyPromos.forEach((p) => merged.set(p.id, p))
+  return [...merged.values()]
+}
 const normalizeProductName = (value: unknown) => String(value || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim().replace(/\s+/g, ' ')
 const findCatalogueProduct = (name: unknown, products: AnyRecord[]) => {
   const normalized = normalizeProductName(name)
@@ -205,13 +211,16 @@ const requireList = (state: AnyRecord, listId: string) => {
   if (!list) return fail('List not found')
   return list
 }
-const enrichItem = (item: AnyRecord, products: AnyRecord[], stores: AnyRecord[], promos: AnyRecord[]) => {
+const enrichItem = (item: AnyRecord, products: AnyRecord[], stores: AnyRecord[], promos: AnyRecord[], multiBuyPromos: AnyRecord[] = []) => {
   const product = products.find((p) => p.id === item.productId)
   const prices = product?.storePrices || {}
   const priceEntries = Object.entries(prices) as [string, number][]
   const lowest = priceEntries.sort((a, b) => a[1] - b[1])[0]
-  const active = promos.filter((p) => p.productId === item.productId && new Date(p.startDate) <= new Date() && new Date(p.endDate) >= new Date())
+  const now = new Date()
+  const active = promos.filter((p) => p.productId === item.productId && new Date(p.startDate) <= now && new Date(p.endDate) >= now)
     .sort((a, b) => a.promoPrice - b.promoPrice)[0]
+  const multiBuy = multiBuyPromos.filter((p) => p.productId === item.productId && new Date(p.startDate) <= now && new Date(p.endDate) >= now && Number(p.quantity) > 0 && Number(p.bundlePrice) > 0)
+    .sort((a, b) => Number(a.bundlePrice) / Number(a.quantity) - Number(b.bundlePrice) / Number(b.quantity))[0]
   const manualStore = stores.find((s) => s.id === item.manualStoreId)
   return {
     ...item,
@@ -228,7 +237,13 @@ const enrichItem = (item: AnyRecord, products: AnyRecord[], stores: AnyRecord[],
       storeName: active.storeName, storeColor: active.storeColor, storeId: active.storeId,
       endDate: active.endDate,
     } : null,
-    notOnPromo: Boolean(item.productId) && !active,
+    multiBuyOffer: !active && multiBuy ? {
+      quantity: Number(multiBuy.quantity), bundlePrice: Number(multiBuy.bundlePrice),
+      unitPrice: Number(multiBuy.bundlePrice) / Number(multiBuy.quantity),
+      storeName: multiBuy.storeName, storeColor: multiBuy.storeColor, storeId: multiBuy.storeId,
+      endDate: multiBuy.endDate,
+    } : null,
+    notOnPromo: Boolean(item.productId) && !active && !multiBuy,
   }
 }
 async function compareList(state: AnyRecord, listId: string, storeIds: string[], preferred: string | null, ctx?: StaticContext) {
@@ -583,7 +598,7 @@ export async function handleStaticApi(method: string, path: string, body: AnyRec
     if (!action) {
       if (verb === 'GET') {
         const list = requireList(state, listId)
-        const [products, stores, promos] = await Promise.all([getProducts(), getStores(), getPromos(ctx)])
+        const [products, stores, promos, multiBuyPromos] = await Promise.all([getProducts(), getStores(), getPromos(ctx), getMultiBuyPromos()])
         let linkedExistingManualItems = false
         const listItems = state.items.filter((i: AnyRecord) => i.listId === listId)
         for (const item of listItems) {
@@ -599,7 +614,7 @@ export async function handleStaticApi(method: string, path: string, body: AnyRec
           }
         }
         if (linkedExistingManualItems) save()
-        const items = listItems.map((i: AnyRecord) => enrichItem(i, products, stores, promos))
+        const items = listItems.map((i: AnyRecord) => enrichItem(i, products, stores, promos, multiBuyPromos))
         return { list, items, plans: state.plans.filter((p: AnyRecord) => p.listId === listId).sort((a: AnyRecord, b: AnyRecord) => String(b.createdAt).localeCompare(String(a.createdAt))).slice(0, 5) }
       }
       if (verb === 'PATCH') {
