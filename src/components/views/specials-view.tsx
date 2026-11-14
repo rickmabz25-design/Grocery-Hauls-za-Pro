@@ -189,7 +189,7 @@ export function SpecialsView() {
                       </p>
                     </div>
                     <span className="shrink-0 bg-lime-600 text-black text-[10px] font-extrabold rounded-full px-2 py-1">
-                      {p.multiBuyQuantity ? `${p.multiBuyQuantity} FOR ${formatZAR(p.bundlePrice ?? 0)}` : `${p.discount}% OFF`}
+                      {p.multiBuyQuantity ? `${p.multiBuyQuantity} FOR ${formatZAR(p.bundlePrice ?? 0)}` : p.discount > 0 ? `${p.discount}% OFF` : 'SPECIAL PRICE'}
                     </span>
                   </div>
                   {p.multiBuyQuantity ? (
@@ -208,8 +208,12 @@ export function SpecialsView() {
                   ) : (
                     <div className="flex items-baseline gap-2 mt-1.5">
                       <span className="text-lg font-extrabold text-lime-700">{formatZAR(p.promoPrice)}</span>
-                      <span className="text-xs line-through text-zinc-400">{formatZAR(p.normalPrice)}</span>
-                      <span className="text-[10px] font-bold text-lime-600">Save {formatZAR(p.saved)}</span>
+                      {p.normalPrice != null && p.normalPrice > 0 && (
+                        <>
+                          <span className="text-xs line-through text-zinc-400">{formatZAR(p.normalPrice)}</span>
+                          {p.saved > 0 && <span className="text-[10px] font-bold text-lime-600">Save {formatZAR(p.saved)}</span>}
+                        </>
+                      )}
                     </div>
                   )}
                   <div className="flex items-center justify-between mt-1.5 gap-2">
