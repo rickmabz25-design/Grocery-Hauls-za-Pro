@@ -95,11 +95,20 @@ export async function applyLocalCatalogueImport(rows: Array<{
   const makeId = () => `local_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 9)}`
   const inferredCategoryFor = (name: string) => {
     const normalized = name.toLowerCase()
-    const categoryName = normalized.includes('illovo brown sugar') ? 'Sugar & Baking'
-      : normalized.includes('excella sunflower oil') ? 'Cooking Oil & Staples'
-      : normalized.includes('ellis brown creamer') ? 'Eggs & Dairy'
-      : null
-    return categoryName ? categories.find((category) => category.name === categoryName) : undefined
+    const rules: Array<[string, string]> = [
+      ['illovo brown sugar', 'Sugar & Baking'],
+      ['excella sunflower oil', 'Cooking Oil & Staples'],
+      ['ellis brown creamer', 'Eggs & Dairy'],
+      ['tastic long grain parboiled white rice', 'Maize, Rice & Grains'],
+      ['golden ray iqf mixed chicken portions', 'Meat & Chicken'],
+      ["kellogg's corn flakes", 'Breakfast Cereals'],
+      ['large eggs', 'Eggs & Dairy'],
+      ['baby steps disposable nappies', 'Baby Products'],
+      ['surf hand washing powder', 'Cleaning Products'],
+      ['shibobo super maize meal', 'Maize, Rice & Grains'],
+    ]
+    const match = rules.find(([productName]) => normalized.includes(productName))
+    return match ? categories.find((category) => category.name === match[1]) : undefined
   }
   for (const row of rows) {
     const store = stores.find((s) => s.id === row.storeId)
