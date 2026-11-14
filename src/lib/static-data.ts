@@ -333,18 +333,32 @@ const enrichItem = (item: AnyRecord, products: AnyRecord[], stores: AnyRecord[],
 }
 async function compareList(state: AnyRecord, listId: string, storeIds: string[], preferred: string | null, ctx?: StaticContext) {
   const list = requireList(state, listId)
-  const [products, stores, promos] = await Promise.all([getProducts(), getStores(), getPromos(ctx)])
+  const [products, stores, promos, multiBuyPromos] = await Promise.all([getProducts(), getStores(), getPromos(ctx), getMultiBuyPromos()])
   // Empty selection means all retailers; ignore stale IDs and include every known store.
   const selected = storeIds.length ? stores.filter((s) => storeIds.includes(s.id)) : stores
   if (!selected.length) fail('No retailers are available to compare')
   const items = state.items.filter((i: AnyRecord) => i.listId === listId)
   const effective = (productId: string, storeId: string) => {
     const product = products.find((p) => p.id === productId)
+    const productNameKey = normalizeProductName(product?.name)
     const normal = product?.storePrices?.[storeId]
+    const now = new Date()
     const promo = promos.filter((p) => p.productId === productId && p.storeId === storeId &&
-      new Date(p.startDate) <= new Date() && new Date(p.endDate) >= new Date())
+      new Date(p.startDate) <= now && new Date(p.endDate) >= now)
       .sort((a, b) => a.promoPrice - b.promoPrice)[0]
     if (promo) return { price: promo.promoPrice, normal: number(normal, promo.normalPrice), promoPrice: promo.promoPrice }
+    const multiBuy = multiBuyPromos.filter((p) =>
+      (p.productId === productId || (productNameKey && normalizeProductName(p.name) === productNameKey)) &&
+      p.storeId === storeId && new Date(p.startDate) <= now && new Date(p.endDate) >= now &&
+      Number(p.quantity) > 0 && Number(p.bundlePrice) > 0
+    ).sort((a, b) => Number(a.bundlePrice) / Number(a.quantity) - Number(b.bundlePrice) / Number(b.quantity))[0]
+    if (multiBuy) {
+      const bundlePrice = Number(multiBuy.bundlePrice)
+      const normalBundlePrice = multiBuy.singleItemPrice == null
+        ? bundlePrice
+        : Number(multiBuy.singleItemPrice) * Number(multiBuy.quantity)
+      return { price: bundlePrice, normal: normalBundlePrice, promoPrice: bundlePrice }
+    }
     return normal == null ? null : { price: number(normal), normal: number(normal), promoPrice: null as number | null }
   }
   const storeResults = selected.map((store) => {
