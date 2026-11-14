@@ -55,7 +55,7 @@ export function LocalCatalogueImport() {
   const [backupFiles, setBackupFiles] = useState<{ products?: unknown; promos?: unknown; multiBuyPromos?: unknown }>({})
   const [backupNames, setBackupNames] = useState<{ products: string; promos: string; multiBuyPromos: string }>({ products: '', promos: '', multiBuyPromos: '' })
   const [backupBusy, setBackupBusy] = useState(false)
-  const [backupResult, setBackupResult] = useState<ReturnType<typeof importLocalCatalogueBackup> | null>(null)
+  const [backupResult, setBackupResult] = useState<Awaited<ReturnType<typeof importLocalCatalogueBackup>> | null>(null)
   const [backupError, setBackupError] = useState('')
 
   useEffect(() => {
