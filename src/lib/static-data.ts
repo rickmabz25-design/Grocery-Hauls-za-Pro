@@ -499,10 +499,38 @@ export async function handleStaticApi(method: string, path: string, body: AnyRec
   if (verb === 'GET' && pathname === '/api/categories') return { categories: await getCategories() }
   if (verb === 'GET' && pathname === '/api/whats-new') { const base = await jsonFile<{ posts: AnyRecord[] }>('/data/whats-new.json'); const local = readLocalWhatsNew().filter(post => post.active !== false); return { posts: [...local, ...(base.posts || [])] } }
   if (verb === 'GET' && pathname === '/api/promos') {
-    const promos = (await getPromos(ctx)).filter((p) => new Date(p.startDate) <= new Date() && new Date(p.endDate) >= new Date())
+    const [basePromos, baseMultiBuy] = await Promise.all([
+      getPromos(ctx),
+      jsonFile<{ multiBuyPromos?: AnyRecord[] }>('/data/multi-buy-promos.json').catch(() => ({ multiBuyPromos: [] })),
+    ])
+    const overrides = readCatalogueOverrides()
+    const multiBuyById = new Map<string, AnyRecord>((baseMultiBuy.multiBuyPromos || []).map((p): [string, AnyRecord] => [p.id, p]))
+    overrides.multiBuyPromos.forEach((p) => multiBuyById.set(p.id, p))
+    const now = new Date()
+    const activePromos = basePromos.filter((p) => new Date(p.startDate) <= now && new Date(p.endDate) >= now)
+    const activeMultiBuy = [...multiBuyById.values()]
+      .filter((p) => new Date(p.startDate) <= now && new Date(p.endDate) >= now)
+      .map((p) => {
+        const quantity = Number(p.quantity) || 0
+        const bundlePrice = Number(p.bundlePrice) || 0
+        const singleItemPrice = p.singleItemPrice == null ? null : Number(p.singleItemPrice)
+        const normalBundlePrice = singleItemPrice != null ? singleItemPrice * quantity : null
+        return {
+          id: p.id, productId: p.productId, name: p.name, unit: p.unit,
+          category: p.category || { id: 'other', name: 'Other', icon: '🛒' },
+          storeId: p.storeId, storeName: p.storeName, storeColor: p.storeColor,
+          promoPrice: quantity > 0 ? bundlePrice / quantity : bundlePrice,
+          normalPrice: singleItemPrice,
+          discount: normalBundlePrice != null && normalBundlePrice > 0 ? Math.max(0, Math.round((1 - bundlePrice / normalBundlePrice) * 100)) : 0,
+          saved: normalBundlePrice != null ? Math.max(0, Math.round((normalBundlePrice - bundlePrice) * 100) / 100) : 0,
+          endDate: p.endDate, createdAt: p.createdAt,
+          multiBuyQuantity: quantity, bundlePrice, unitPrice: quantity > 0 ? bundlePrice / quantity : bundlePrice,
+          singleItemPrice, offerText: p.offerText || null,
+        }
+      })
     const store = query.get('store'), category = query.get('category'), sort = query.get('sort') || 'discount'
-    let rows = promos.filter((p) => (!store || p.storeId === store) && (!category || p.category?.id === category))
-    rows = [...rows].sort(sort === 'price' ? (a, b) => a.promoPrice - b.promoPrice : sort === 'ending' ? (a, b) => +new Date(a.endDate) - +new Date(b.endDate) : sort === 'new' ? (a, b) => +new Date(b.createdAt) - +new Date(a.createdAt) : (a, b) => b.discount - a.discount || a.promoPrice - b.promoPrice)
+    let rows = [...activePromos, ...activeMultiBuy].filter((p) => (!store || p.storeId === store) && (!category || p.category?.id === category))
+    rows = rows.sort(sort === 'price' ? (a, b) => a.promoPrice - b.promoPrice : sort === 'ending' ? (a, b) => +new Date(a.endDate) - +new Date(b.endDate) : sort === 'new' ? (a, b) => +new Date(b.createdAt) - +new Date(a.createdAt) : (a, b) => b.discount - a.discount || a.promoPrice - b.promoPrice)
     return { promos: rows }
   }
   if (verb === 'GET' && pathname === '/api/auth/session') return { user: null }
