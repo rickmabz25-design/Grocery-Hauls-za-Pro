@@ -5,7 +5,7 @@
 import { useEffect, useState } from 'react'
 import * as XLSX from 'xlsx'
 import { autoMap, buildReviewRows, rowHasError, reviewSummary, isLikelyUnstructuredFlyer, type ImportReviewRow } from '@/lib/import-review'
-import { applyLocalCatalogueImport, exportLocalCatalogueSnapshot } from '@/lib/static-data'
+import { applyLocalCatalogueImport, exportLocalCatalogueSnapshot, importLocalCatalogueBackup } from '@/lib/static-data'
 import { Button } from '@/components/ui/button'
 import { toast } from '@/hooks/use-toast'
 import { Download, FileSpreadsheet, Upload } from 'lucide-react'
@@ -52,6 +52,11 @@ export function LocalCatalogueImport() {
   const [rows, setRows] = useState<ImportReviewRow[]>([])
   const [busy, setBusy] = useState(false)
   const [summary, setSummary] = useState<Awaited<ReturnType<typeof applyLocalCatalogueImport>> | null>(null)
+  const [backupFiles, setBackupFiles] = useState<{ products?: unknown; promos?: unknown; multiBuyPromos?: unknown }>({})
+  const [backupNames, setBackupNames] = useState<{ products: string; promos: string; multiBuyPromos: string }>({ products: '', promos: '', multiBuyPromos: '' })
+  const [backupBusy, setBackupBusy] = useState(false)
+  const [backupResult, setBackupResult] = useState<Awaited<ReturnType<typeof importLocalCatalogueBackup>> | null>(null)
+  const [backupError, setBackupError] = useState('')
 
   useEffect(() => {
     fetch('/data/stores.json').then(r => r.json()).then(d => {
@@ -354,6 +359,38 @@ export function LocalCatalogueImport() {
     const link = document.createElement('a'); link.href = url; link.download = 'groceryhaulz-import-template.csv'; link.click(); URL.revokeObjectURL(url)
   }
 
+  const readBackupFile = async (kind: 'products' | 'promos' | 'multiBuyPromos', selected?: File) => {
+    if (!selected) return
+    setBackupError(''); setBackupResult(null)
+    try {
+      const parsed: unknown = JSON.parse(await selected.text())
+      if (!parsed || typeof parsed !== 'object' || !Array.isArray((parsed as Record<string, unknown>)[kind])) {
+        throw new Error(`${selected.name} is not a valid ${kind} backup file.`)
+      }
+      setBackupFiles(current => ({ ...current, [kind]: (parsed as Record<string, unknown>)[kind] }))
+      setBackupNames(current => ({ ...current, [kind]: selected.name }))
+    } catch (error) {
+      setBackupFiles(current => ({ ...current, [kind]: undefined }))
+      setBackupNames(current => ({ ...current, [kind]: '' }))
+      setBackupError(error instanceof Error ? error.message : 'Could not read this backup file.')
+    }
+  }
+
+  const restoreCatalogueBackup = async () => {
+    setBackupBusy(true); setBackupError(''); setBackupResult(null)
+    try {
+      const result = await importLocalCatalogueBackup(backupFiles)
+      setBackupResult(result)
+      toast({ title: 'Catalogue backup restored locally', description: `${result.productsImported} products, ${result.promosImported} promotions and ${result.multiBuyOffersImported} multi-buy offers merged into this browser.` })
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'The backup could not be restored.'
+      setBackupError(message)
+      toast({ title: 'Backup not restored', description: message, variant: 'destructive' })
+    } finally {
+      setBackupBusy(false)
+    }
+  }
+
   const exportCatalogueFile = async (kind: 'products' | 'promos' | 'multiBuyPromos') => {
     try {
       const snapshot = await exportLocalCatalogueSnapshot()
@@ -499,6 +536,24 @@ export function LocalCatalogueImport() {
       <h3 className="font-bold text-lime-300">Saved in this browser</h3>
       <p className="mt-2 text-xs text-zinc-300">{summary.rowsProcessed} rows · {summary.productsCreated} new products · {summary.productsUpdated} existing products updated · {summary.pricesUpserted} single-item prices · {summary.promosCreated} single-item promotions · {summary.multiBuyPromosCreated} multi-buy offers</p>
     </section>}
+
+    <section className="rounded-2xl border border-sky-800 bg-sky-950/20 p-5 space-y-3">
+      <div className="flex items-center gap-2"><Download className="h-5 w-5 text-sky-400" /><h3 className="font-bold text-sm">Restore a saved catalogue backup</h3></div>
+      <p className="text-xs leading-relaxed text-zinc-300">Use this to move the three JSON files exported from another preview into this browser. Select all three files below. The restore merges records by ID and keeps other local catalogue records; it does not upload data or publish anything.</p>
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+        {([
+          ['products', 'Products JSON'],
+          ['promos', 'Promotions JSON'],
+          ['multiBuyPromos', 'Multi-buy promotions JSON'],
+        ] as const).map(([kind, label]) => <label key={kind} className="block text-xs font-semibold text-zinc-300">{label}
+          <input type="file" accept=".json,application/json" className="mt-2 block w-full text-[11px] text-zinc-400 file:mr-2 file:rounded-md file:border-0 file:bg-zinc-700 file:px-2 file:py-1.5 file:text-zinc-100" onChange={e => { void readBackupFile(kind, e.target.files?.[0]); e.currentTarget.value = '' }} />
+          <span className="mt-1 block truncate text-[10px] font-normal text-zinc-500">{backupNames[kind] || 'No file selected'}</span>
+        </label>)}
+      </div>
+      <Button type="button" onClick={restoreCatalogueBackup} disabled={backupBusy || !backupFiles.products || !backupFiles.promos || !backupFiles.multiBuyPromos} className="bg-sky-600 hover:bg-sky-700">{backupBusy ? 'Restoring locally…' : 'Restore these 3 catalogue files'}</Button>
+      {backupError && <p role="alert" className="text-xs text-red-300">{backupError}</p>}
+      {backupResult && <p role="status" className="text-xs text-lime-300">Restored: {backupResult.productsImported} products · {backupResult.promosImported} promotions · {backupResult.multiBuyOffersImported} multi-buy offers. Existing local records were retained.</p>}
+    </section>
 
     <section className="rounded-2xl border border-zinc-800 bg-zinc-900 p-5 space-y-2">
       <h3 className="font-bold text-sm">Export approved catalogue</h3>

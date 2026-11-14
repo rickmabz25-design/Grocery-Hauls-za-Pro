@@ -63,7 +63,7 @@ export function HomeView() {
           <button onClick={() => go('shop')} className="mt-5 flex items-center gap-2 text-sm font-bold text-white"><ScanLine className="h-4 w-4" /> Shop mode</button>
         </div>
         <div className="absolute bottom-5 right-5 z-10 rotate-3 rounded-2xl bg-[#d8e5dc] px-4 py-3 text-slate-900 shadow-lg w-40">
-          <p className="text-[8px] font-black uppercase tracking-[0.16em]">Your saving potential</p><p className="text-3xl font-black mt-1">R{stats ? Math.max(0, stats.activePromos * 32) : 320}</p><p className="text-[9px] text-slate-600">based on available specials</p>
+          <p className="text-[8px] font-black uppercase tracking-[0.16em]">Available specials</p><p className="text-3xl font-black mt-1">{stats ? stats.activePromos : "—"}</p><p className="text-[9px] text-slate-600">current offers loaded</p>
         </div>
       </section>
 

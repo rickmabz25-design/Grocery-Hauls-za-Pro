@@ -160,6 +160,58 @@ export async function applyLocalCatalogueImport(rows: Array<{
   return { productsCreated, productsUpdated, pricesUpserted, promosCreated, multiBuyPromosCreated, rowsProcessed: rows.length }
 }
 
+
+/** Restore exported catalogue JSON into this browser without copying the entire base catalogue into localStorage. */
+export async function importLocalCatalogueBackup(input: {
+  products?: unknown
+  promos?: unknown
+  multiBuyPromos?: unknown
+}) {
+  if (typeof window === 'undefined') throw new Error('Catalogue restore requires a browser')
+  const readRows = (value: unknown, key: string): AnyRecord[] => {
+    if (!Array.isArray(value)) throw new Error(`The ${key}.json file is missing its expected list.`)
+    if (value.some((row) => !row || typeof row !== 'object' || typeof row.id !== 'string' || !row.id.trim())) {
+      throw new Error(`The ${key}.json file contains a record without a valid ID. Nothing was imported.`)
+    }
+    return value as AnyRecord[]
+  }
+  const incomingProducts = readRows(input.products, 'products')
+  const incomingPromos = readRows(input.promos, 'promos')
+  const incomingMultiBuy = readRows(input.multiBuyPromos, 'multiBuyPromos')
+  const [baseProducts, basePromos, baseMultiBuy] = await Promise.all([
+    jsonFile<{ products: AnyRecord[] }>('/data/products.json'),
+    jsonFile<{ promos: AnyRecord[] }>('/data/promos.json'),
+    jsonFile<{ multiBuyPromos?: AnyRecord[] }>('/data/multi-buy-promos.json').catch(() => ({ multiBuyPromos: [] })),
+  ])
+  const changedOnly = (incoming: AnyRecord[], base: AnyRecord[]) => {
+    const baseline = new Map(base.map((row) => [row.id, JSON.stringify(row)]))
+    return incoming.filter((row) => baseline.get(row.id) !== JSON.stringify(row))
+  }
+  const localProducts = changedOnly(incomingProducts, baseProducts.products)
+  const localPromos = changedOnly(incomingPromos, basePromos.promos)
+  const localMultiBuy = changedOnly(incomingMultiBuy, baseMultiBuy.multiBuyPromos || [])
+  const current = readCatalogueOverrides()
+  const mergeById = (existing: AnyRecord[], incoming: AnyRecord[]) => {
+    const merged = new Map<string, AnyRecord>(existing.map((row) => [row.id, row]))
+    incoming.forEach((row) => merged.set(row.id, row))
+    return [...merged.values()]
+  }
+  const next = {
+    products: mergeById(current.products, localProducts),
+    promos: mergeById(current.promos, localPromos),
+    multiBuyPromos: mergeById(current.multiBuyPromos, localMultiBuy),
+  }
+  window.localStorage.setItem(CATALOGUE_OVERRIDE_KEY, JSON.stringify(next))
+  return {
+    productsImported: localProducts.length,
+    promosImported: localPromos.length,
+    multiBuyOffersImported: localMultiBuy.length,
+    productsStored: next.products.length,
+    promosStored: next.promos.length,
+    multiBuyOffersStored: next.multiBuyPromos.length,
+  }
+}
+
 /** Export a merged snapshot that can be reviewed and committed to public/data. */
 export async function exportLocalCatalogueSnapshot() {
   const [baseProducts, basePromos] = await Promise.all([
@@ -194,19 +246,33 @@ const getPromos = async (ctx?: StaticContext) => {
   overrides.forEach((p) => merged.set(p.id, p))
   return [...merged.values()]
 }
+const getMultiBuyPromos = async () => {
+  const base = await jsonFile<{ multiBuyPromos?: AnyRecord[] }>('/data/multi-buy-promos.json').catch(() => ({ multiBuyPromos: [] }))
+  const merged = new Map<string, AnyRecord>((base.multiBuyPromos || []).map((p): [string, AnyRecord] => [p.id, p]))
+  readCatalogueOverrides().multiBuyPromos.forEach((p) => merged.set(p.id, p))
+  return [...merged.values()]
+}
+const normalizeProductName = (value: unknown) => String(value || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim().replace(/\s+/g, ' ')
+const findCatalogueProduct = (name: unknown, products: AnyRecord[]) => {
+  const normalized = normalizeProductName(name)
+  return normalized ? products.find((product) => normalizeProductName(product.name) === normalized) : undefined
+}
 const fail = (message: string): never => { throw new Error(message) }
 const requireList = (state: AnyRecord, listId: string) => {
   const list = state.lists.find((entry: AnyRecord) => entry.id === listId)
   if (!list) return fail('List not found')
   return list
 }
-const enrichItem = (item: AnyRecord, products: AnyRecord[], stores: AnyRecord[], promos: AnyRecord[]) => {
+const enrichItem = (item: AnyRecord, products: AnyRecord[], stores: AnyRecord[], promos: AnyRecord[], multiBuyPromos: AnyRecord[] = []) => {
   const product = products.find((p) => p.id === item.productId)
   const prices = product?.storePrices || {}
   const priceEntries = Object.entries(prices) as [string, number][]
   const lowest = priceEntries.sort((a, b) => a[1] - b[1])[0]
-  const active = promos.filter((p) => p.productId === item.productId && new Date(p.startDate) <= new Date() && new Date(p.endDate) >= new Date())
+  const now = new Date()
+  const active = promos.filter((p) => p.productId === item.productId && new Date(p.startDate) <= now && new Date(p.endDate) >= now)
     .sort((a, b) => a.promoPrice - b.promoPrice)[0]
+  const multiBuy = multiBuyPromos.filter((p) => p.productId === item.productId && new Date(p.startDate) <= now && new Date(p.endDate) >= now && Number(p.quantity) > 0 && Number(p.bundlePrice) > 0)
+    .sort((a, b) => Number(a.bundlePrice) / Number(a.quantity) - Number(b.bundlePrice) / Number(b.quantity))[0]
   const manualStore = stores.find((s) => s.id === item.manualStoreId)
   return {
     ...item,
@@ -223,7 +289,13 @@ const enrichItem = (item: AnyRecord, products: AnyRecord[], stores: AnyRecord[],
       storeName: active.storeName, storeColor: active.storeColor, storeId: active.storeId,
       endDate: active.endDate,
     } : null,
-    notOnPromo: Boolean(item.productId) && !active,
+    multiBuyOffer: !active && multiBuy ? {
+      quantity: Number(multiBuy.quantity), bundlePrice: Number(multiBuy.bundlePrice),
+      unitPrice: Number(multiBuy.bundlePrice) / Number(multiBuy.quantity),
+      storeName: multiBuy.storeName, storeColor: multiBuy.storeColor, storeId: multiBuy.storeId,
+      endDate: multiBuy.endDate,
+    } : null,
+    notOnPromo: Boolean(item.productId) && !active && !multiBuy,
   }
 }
 async function compareList(state: AnyRecord, listId: string, storeIds: string[], preferred: string | null, ctx?: StaticContext) {
@@ -499,10 +571,38 @@ export async function handleStaticApi(method: string, path: string, body: AnyRec
   if (verb === 'GET' && pathname === '/api/categories') return { categories: await getCategories() }
   if (verb === 'GET' && pathname === '/api/whats-new') { const base = await jsonFile<{ posts: AnyRecord[] }>('/data/whats-new.json'); const local = readLocalWhatsNew().filter(post => post.active !== false); return { posts: [...local, ...(base.posts || [])] } }
   if (verb === 'GET' && pathname === '/api/promos') {
-    const promos = (await getPromos(ctx)).filter((p) => new Date(p.startDate) <= new Date() && new Date(p.endDate) >= new Date())
+    const [basePromos, baseMultiBuy] = await Promise.all([
+      getPromos(ctx),
+      jsonFile<{ multiBuyPromos?: AnyRecord[] }>('/data/multi-buy-promos.json').catch(() => ({ multiBuyPromos: [] })),
+    ])
+    const overrides = readCatalogueOverrides()
+    const multiBuyById = new Map<string, AnyRecord>((baseMultiBuy.multiBuyPromos || []).map((p): [string, AnyRecord] => [p.id, p]))
+    overrides.multiBuyPromos.forEach((p) => multiBuyById.set(p.id, p))
+    const now = new Date()
+    const activePromos = basePromos.filter((p) => new Date(p.startDate) <= now && new Date(p.endDate) >= now)
+    const activeMultiBuy = [...multiBuyById.values()]
+      .filter((p) => new Date(p.startDate) <= now && new Date(p.endDate) >= now)
+      .map((p) => {
+        const quantity = Number(p.quantity) || 0
+        const bundlePrice = Number(p.bundlePrice) || 0
+        const singleItemPrice = p.singleItemPrice == null ? null : Number(p.singleItemPrice)
+        const normalBundlePrice = singleItemPrice != null ? singleItemPrice * quantity : null
+        return {
+          id: p.id, productId: p.productId, name: p.name, unit: p.unit,
+          category: p.category || { id: 'other', name: 'Other', icon: '🛒' },
+          storeId: p.storeId, storeName: p.storeName, storeColor: p.storeColor,
+          promoPrice: quantity > 0 ? bundlePrice / quantity : bundlePrice,
+          normalPrice: singleItemPrice,
+          discount: normalBundlePrice != null && normalBundlePrice > 0 ? Math.max(0, Math.round((1 - bundlePrice / normalBundlePrice) * 100)) : 0,
+          saved: normalBundlePrice != null ? Math.max(0, Math.round((normalBundlePrice - bundlePrice) * 100) / 100) : 0,
+          endDate: p.endDate, createdAt: p.createdAt,
+          multiBuyQuantity: quantity, bundlePrice, unitPrice: quantity > 0 ? bundlePrice / quantity : bundlePrice,
+          singleItemPrice, offerText: p.offerText || null,
+        }
+      })
     const store = query.get('store'), category = query.get('category'), sort = query.get('sort') || 'discount'
-    let rows = promos.filter((p) => (!store || p.storeId === store) && (!category || p.category?.id === category))
-    rows = [...rows].sort(sort === 'price' ? (a, b) => a.promoPrice - b.promoPrice : sort === 'ending' ? (a, b) => +new Date(a.endDate) - +new Date(b.endDate) : sort === 'new' ? (a, b) => +new Date(b.createdAt) - +new Date(a.createdAt) : (a, b) => b.discount - a.discount || a.promoPrice - b.promoPrice)
+    let rows = [...activePromos, ...activeMultiBuy].filter((p) => (!store || p.storeId === store) && (!category || p.category?.id === category))
+    rows = rows.sort(sort === 'price' ? (a, b) => a.promoPrice - b.promoPrice : sort === 'ending' ? (a, b) => +new Date(a.endDate) - +new Date(b.endDate) : sort === 'new' ? (a, b) => +new Date(b.createdAt) - +new Date(a.createdAt) : (a, b) => b.discount - a.discount || a.promoPrice - b.promoPrice)
     return { promos: rows }
   }
   if (verb === 'GET' && pathname === '/api/auth/session') return { user: null }
@@ -550,8 +650,23 @@ export async function handleStaticApi(method: string, path: string, body: AnyRec
     if (!action) {
       if (verb === 'GET') {
         const list = requireList(state, listId)
-        const [products, stores, promos] = await Promise.all([getProducts(), getStores(), getPromos(ctx)])
-        const items = state.items.filter((i: AnyRecord) => i.listId === listId).map((i: AnyRecord) => enrichItem(i, products, stores, promos))
+        const [products, stores, promos, multiBuyPromos] = await Promise.all([getProducts(), getStores(), getPromos(ctx), getMultiBuyPromos()])
+        let linkedExistingManualItems = false
+        const listItems = state.items.filter((i: AnyRecord) => i.listId === listId)
+        for (const item of listItems) {
+          if (!item.productId && item.manualPrice == null && item.manualName) {
+            const match = findCatalogueProduct(item.manualName, products)
+            if (match) {
+              item.productId = match.id
+              item.manualName = null
+              item.manualUnit = null
+              item.manualStoreId = null
+              linkedExistingManualItems = true
+            }
+          }
+        }
+        if (linkedExistingManualItems) save()
+        const items = listItems.map((i: AnyRecord) => enrichItem(i, products, stores, promos, multiBuyPromos))
         return { list, items, plans: state.plans.filter((p: AnyRecord) => p.listId === listId).sort((a: AnyRecord, b: AnyRecord) => String(b.createdAt).localeCompare(String(a.createdAt))).slice(0, 5) }
       }
       if (verb === 'PATCH') {
@@ -586,7 +701,10 @@ export async function handleStaticApi(method: string, path: string, body: AnyRec
           const name = String(body?.name || '').trim(), price = body?.price == null ? null : Number(body.price)
           if (!name) fail('Enter the product name')
           if (price != null && (!Number.isFinite(price) || price < 0)) fail('Enter a valid shelf price')
-          item = { id: id(), listId, productId: null, manualName: name.slice(0, 80), manualUnit: body.unit == null ? null : String(body.unit).trim().slice(0, 40) || null, manualPrice: price, manualStoreId: body.storeId || null, quantity, source: body.source ?? 'manual', note: null, createdAt: nowIso() }
+          const matchedProduct = price == null ? findCatalogueProduct(name, await getProducts()) : undefined
+          item = matchedProduct
+            ? { id: id(), listId, productId: matchedProduct.id, manualName: null, manualPrice: null, manualStoreId: null, quantity, source: 'catalogue-match', note: null, createdAt: nowIso() }
+            : { id: id(), listId, productId: null, manualName: name.slice(0, 80), manualUnit: body.unit == null ? null : String(body.unit).trim().slice(0, 40) || null, manualPrice: price, manualStoreId: body.storeId || null, quantity, source: body.source ?? 'manual', note: null, createdAt: nowIso() }
         }
         state.items.push(item); save(); return { item }
       }
