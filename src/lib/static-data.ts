@@ -161,8 +161,8 @@ export async function applyLocalCatalogueImport(rows: Array<{
 }
 
 
-/** Restore exported catalogue JSON into this browser without clearing existing local data. */
-export function importLocalCatalogueBackup(input: {
+/** Restore exported catalogue JSON into this browser without copying the entire base catalogue into localStorage. */
+export async function importLocalCatalogueBackup(input: {
   products?: unknown
   promos?: unknown
   multiBuyPromos?: unknown
@@ -178,6 +178,18 @@ export function importLocalCatalogueBackup(input: {
   const incomingProducts = readRows(input.products, 'products')
   const incomingPromos = readRows(input.promos, 'promos')
   const incomingMultiBuy = readRows(input.multiBuyPromos, 'multiBuyPromos')
+  const [baseProducts, basePromos, baseMultiBuy] = await Promise.all([
+    jsonFile<{ products: AnyRecord[] }>('/data/products.json'),
+    jsonFile<{ promos: AnyRecord[] }>('/data/promos.json'),
+    jsonFile<{ multiBuyPromos?: AnyRecord[] }>('/data/multi-buy-promos.json').catch(() => ({ multiBuyPromos: [] })),
+  ])
+  const changedOnly = (incoming: AnyRecord[], base: AnyRecord[]) => {
+    const baseline = new Map(base.map((row) => [row.id, JSON.stringify(row)]))
+    return incoming.filter((row) => baseline.get(row.id) !== JSON.stringify(row))
+  }
+  const localProducts = changedOnly(incomingProducts, baseProducts.products)
+  const localPromos = changedOnly(incomingPromos, basePromos.promos)
+  const localMultiBuy = changedOnly(incomingMultiBuy, baseMultiBuy.multiBuyPromos || [])
   const current = readCatalogueOverrides()
   const mergeById = (existing: AnyRecord[], incoming: AnyRecord[]) => {
     const merged = new Map<string, AnyRecord>(existing.map((row) => [row.id, row]))
@@ -185,15 +197,15 @@ export function importLocalCatalogueBackup(input: {
     return [...merged.values()]
   }
   const next = {
-    products: mergeById(current.products, incomingProducts),
-    promos: mergeById(current.promos, incomingPromos),
-    multiBuyPromos: mergeById(current.multiBuyPromos, incomingMultiBuy),
+    products: mergeById(current.products, localProducts),
+    promos: mergeById(current.promos, localPromos),
+    multiBuyPromos: mergeById(current.multiBuyPromos, localMultiBuy),
   }
   window.localStorage.setItem(CATALOGUE_OVERRIDE_KEY, JSON.stringify(next))
   return {
-    productsImported: incomingProducts.length,
-    promosImported: incomingPromos.length,
-    multiBuyOffersImported: incomingMultiBuy.length,
+    productsImported: localProducts.length,
+    promosImported: localPromos.length,
+    multiBuyOffersImported: localMultiBuy.length,
     productsStored: next.products.length,
     promosStored: next.promos.length,
     multiBuyOffersStored: next.multiBuyPromos.length,
