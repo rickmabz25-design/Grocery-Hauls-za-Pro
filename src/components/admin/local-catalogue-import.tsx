@@ -345,7 +345,7 @@ export function LocalCatalogueImport() {
       const result = await applyLocalCatalogueImport(payload)
       setSummary(result)
       setSavedCounts(getLocalCatalogueOverrideCounts())
-      toast({ title: 'Local catalogue updated', description: `${result.rowsProcessed} rows saved locally, including ${result.multiBuyPromosCreated} multi-buy offers.` })
+      toast({ title: 'Local catalogue updated', description: `${result.multiBuyPromosProcessed} multi-buy offers processed: ${result.multiBuyPromosCreated} new and ${result.multiBuyPromosUpdated} updated; ${result.multiBuyPromosStored} total saved in this browser.` })
     } catch (error) {
       toast({ title: 'Import not saved', description: error instanceof Error ? error.message : 'Please review the file and try again.', variant: 'destructive' })
     } finally {
@@ -538,7 +538,7 @@ export function LocalCatalogueImport() {
     <section className="rounded-2xl border border-lime-800 bg-lime-950/30 p-4 text-sm">
       <h3 className="font-bold text-lime-300">Saved in this browser</h3>
       <p className="mt-2 text-xs text-zinc-300">{savedCounts.products} locally saved product records · {savedCounts.promos} single-item promotions · {savedCounts.multiBuyPromos} multi-buy offers.</p>
-      {summary && <p className="mt-1 text-xs text-zinc-400">Last save: {summary.rowsProcessed} rows · {summary.productsCreated} new products · {summary.productsUpdated} existing products updated · {summary.pricesUpserted} single-item prices · {summary.promosCreated} new single-item promotions · {summary.multiBuyPromosCreated} new multi-buy offers.</p>}
+      {summary && <p className="mt-1 text-xs text-zinc-400">Last save: {summary.rowsProcessed} rows · {summary.productsCreated} new products · {summary.productsUpdated} existing products updated · {summary.pricesUpserted} single-item prices · {summary.promosCreated} new single-item promotions · {summary.multiBuyPromosProcessed} multi-buy offers processed ({summary.multiBuyPromosCreated} new, {summary.multiBuyPromosUpdated} updated) · {summary.multiBuyPromosStored} total multi-buy offers stored.</p>}
       <p className="mt-1 text-[10px] text-zinc-500">These counts are read from this browser's saved catalogue and remain visible after you reopen this page.</p>
     </section>
 
