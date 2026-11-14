@@ -160,6 +160,46 @@ export async function applyLocalCatalogueImport(rows: Array<{
   return { productsCreated, productsUpdated, pricesUpserted, promosCreated, multiBuyPromosCreated, rowsProcessed: rows.length }
 }
 
+
+/** Restore exported catalogue JSON into this browser without clearing existing local data. */
+export function importLocalCatalogueBackup(input: {
+  products?: unknown
+  promos?: unknown
+  multiBuyPromos?: unknown
+}) {
+  if (typeof window === 'undefined') throw new Error('Catalogue restore requires a browser')
+  const readRows = (value: unknown, key: string): AnyRecord[] => {
+    if (!Array.isArray(value)) throw new Error(`The ${key}.json file is missing its expected list.`)
+    if (value.some((row) => !row || typeof row !== 'object' || typeof row.id !== 'string' || !row.id.trim())) {
+      throw new Error(`The ${key}.json file contains a record without a valid ID. Nothing was imported.`)
+    }
+    return value as AnyRecord[]
+  }
+  const incomingProducts = readRows(input.products, 'products')
+  const incomingPromos = readRows(input.promos, 'promos')
+  const incomingMultiBuy = readRows(input.multiBuyPromos, 'multiBuyPromos')
+  const current = readCatalogueOverrides()
+  const mergeById = (existing: AnyRecord[], incoming: AnyRecord[]) => {
+    const merged = new Map<string, AnyRecord>(existing.map((row) => [row.id, row]))
+    incoming.forEach((row) => merged.set(row.id, row))
+    return [...merged.values()]
+  }
+  const next = {
+    products: mergeById(current.products, incomingProducts),
+    promos: mergeById(current.promos, incomingPromos),
+    multiBuyPromos: mergeById(current.multiBuyPromos, incomingMultiBuy),
+  }
+  window.localStorage.setItem(CATALOGUE_OVERRIDE_KEY, JSON.stringify(next))
+  return {
+    productsImported: incomingProducts.length,
+    promosImported: incomingPromos.length,
+    multiBuyOffersImported: incomingMultiBuy.length,
+    productsStored: next.products.length,
+    promosStored: next.promos.length,
+    multiBuyOffersStored: next.multiBuyPromos.length,
+  }
+}
+
 /** Export a merged snapshot that can be reviewed and committed to public/data. */
 export async function exportLocalCatalogueSnapshot() {
   const [baseProducts, basePromos] = await Promise.all([
