@@ -297,8 +297,15 @@ const enrichItem = (item: AnyRecord, products: AnyRecord[], stores: AnyRecord[],
   const now = new Date()
   const active = promos.filter((p) => p.productId === item.productId && new Date(p.startDate) <= now && new Date(p.endDate) >= now)
     .sort((a, b) => a.promoPrice - b.promoPrice)[0]
-  const multiBuy = multiBuyPromos.filter((p) => p.productId === item.productId && new Date(p.startDate) <= now && new Date(p.endDate) >= now && Number(p.quantity) > 0 && Number(p.bundlePrice) > 0)
-    .sort((a, b) => Number(a.bundlePrice) / Number(a.quantity) - Number(b.bundlePrice) / Number(b.quantity))[0]
+  // Imported flyer offers can retain a product name while an older list item
+  // points at a different catalogue ID. Match by normalized name as a safe
+  // fallback so the offer is not lost when the IDs do not line up.
+  const productNameKey = normalizeProductName(product?.name || item.manualName)
+  const multiBuy = multiBuyPromos.filter((p) =>
+    (p.productId === item.productId || (productNameKey && normalizeProductName(p.name) === productNameKey)) &&
+    new Date(p.startDate) <= now && new Date(p.endDate) >= now &&
+    Number(p.quantity) > 0 && Number(p.bundlePrice) > 0
+  ).sort((a, b) => Number(a.bundlePrice) / Number(a.quantity) - Number(b.bundlePrice) / Number(b.quantity))[0]
   const manualStore = stores.find((s) => s.id === item.manualStoreId)
   return {
     ...item,
