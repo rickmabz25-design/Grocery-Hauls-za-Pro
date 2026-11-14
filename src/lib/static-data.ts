@@ -194,6 +194,11 @@ const getPromos = async (ctx?: StaticContext) => {
   overrides.forEach((p) => merged.set(p.id, p))
   return [...merged.values()]
 }
+const normalizeProductName = (value: unknown) => String(value || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim().replace(/\\s+/g, ' ')
+const findCatalogueProduct = (name: unknown, products: AnyRecord[]) => {
+  const normalized = normalizeProductName(name)
+  return normalized ? products.find((product) => normalizeProductName(product.name) === normalized) : undefined
+}
 const fail = (message: string): never => { throw new Error(message) }
 const requireList = (state: AnyRecord, listId: string) => {
   const list = state.lists.find((entry: AnyRecord) => entry.id === listId)
@@ -579,7 +584,22 @@ export async function handleStaticApi(method: string, path: string, body: AnyRec
       if (verb === 'GET') {
         const list = requireList(state, listId)
         const [products, stores, promos] = await Promise.all([getProducts(), getStores(), getPromos(ctx)])
-        const items = state.items.filter((i: AnyRecord) => i.listId === listId).map((i: AnyRecord) => enrichItem(i, products, stores, promos))
+        let linkedExistingManualItems = false
+        const listItems = state.items.filter((i: AnyRecord) => i.listId === listId)
+        for (const item of listItems) {
+          if (!item.productId && item.manualPrice == null && item.manualName) {
+            const match = findCatalogueProduct(item.manualName, products)
+            if (match) {
+              item.productId = match.id
+              item.manualName = null
+              item.manualUnit = null
+              item.manualStoreId = null
+              linkedExistingManualItems = true
+            }
+          }
+        }
+        if (linkedExistingManualItems) save()
+        const items = listItems.map((i: AnyRecord) => enrichItem(i, products, stores, promos))
         return { list, items, plans: state.plans.filter((p: AnyRecord) => p.listId === listId).sort((a: AnyRecord, b: AnyRecord) => String(b.createdAt).localeCompare(String(a.createdAt))).slice(0, 5) }
       }
       if (verb === 'PATCH') {
@@ -614,7 +634,10 @@ export async function handleStaticApi(method: string, path: string, body: AnyRec
           const name = String(body?.name || '').trim(), price = body?.price == null ? null : Number(body.price)
           if (!name) fail('Enter the product name')
           if (price != null && (!Number.isFinite(price) || price < 0)) fail('Enter a valid shelf price')
-          item = { id: id(), listId, productId: null, manualName: name.slice(0, 80), manualUnit: body.unit == null ? null : String(body.unit).trim().slice(0, 40) || null, manualPrice: price, manualStoreId: body.storeId || null, quantity, source: body.source ?? 'manual', note: null, createdAt: nowIso() }
+          const matchedProduct = price == null ? findCatalogueProduct(name, await getProducts()) : undefined
+          item = matchedProduct
+            ? { id: id(), listId, productId: matchedProduct.id, manualName: null, manualPrice: null, manualStoreId: null, quantity, source: 'catalogue-match', note: null, createdAt: nowIso() }
+            : { id: id(), listId, productId: null, manualName: name.slice(0, 80), manualUnit: body.unit == null ? null : String(body.unit).trim().slice(0, 40) || null, manualPrice: price, manualStoreId: body.storeId || null, quantity, source: body.source ?? 'manual', note: null, createdAt: nowIso() }
         }
         state.items.push(item); save(); return { item }
       }
