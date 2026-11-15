@@ -339,7 +339,7 @@ export function LocalCatalogueImport() {
       const key = headerKey(header)
       return kind === 'start'
         ? /^(startdate|promostartdate|promotionstartdate|offerstartdate|validfrom|validfromdate|from|fromdate|datefrom)$/.test(key)
-        : /^(enddate|promoenddate|promotionenddate|offerenddate|validto|validtodate|to|todate|dateto|expirydate)$/.test(key)
+        : /^(enddate|promoenddate|promotionenddate|offerenddate|validto|validtodate|validuntil|validuntildate|to|todate|dateto|expirydate)$/.test(key)
     })
     const coreMap = {
       name: mapping.name, store: mapping.store, unit: mapping.unit,
