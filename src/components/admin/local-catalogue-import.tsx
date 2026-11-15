@@ -15,6 +15,21 @@ type Category = { id: string; name: string; icon?: string }
 type ParsedFile = { headers: string[]; records: Record<string, unknown>[]; name: string; defaultStart?: string; defaultEnd?: string }
 type FlyerCandidate = { id: number; name: string; normalPrice: string; promoPrice: string; sourceLine: string }
 
+const ALL_RETAILERS = '__all_retailers__'
+
+function canonicalStoreName(value: string): string {
+  const raw = value.trim()
+  const key = raw.toLowerCase().replace(/\\s+/g, ' ')
+  const aliases: Record<string, string> = {
+    'boxer superstores': 'Boxer',
+    'boxer superstore': 'Boxer',
+    'food lovers market': "Food Lover's Market",
+    'shoprite liquorshop': 'Shoprite LiquorShop',
+    'tops at spar': 'TOPS at SPAR',
+  }
+  return aliases[key] || raw
+}
+
 const fields = [
   ['name', 'Product name *'], ['store', 'Store (optional if default selected)'],
   ['unit', 'Size / pack'], ['normalPrice', 'Normal price'], ['promoPrice', 'Promo price'],
@@ -121,6 +136,7 @@ export function LocalCatalogueImport() {
       if (defaultStart) setFlyerStartDate(defaultStart)
       if (defaultEnd) setFlyerEndDate(defaultEnd)
       setMapping(auto)
+      if (auto.store) setDefaultStore(ALL_RETAILERS)
       toast({ title: 'File read successfully', description: `${records.length} data rows found in ${selected.name}.` })
     } catch (error) {
       toast({ title: 'Could not read file', description: error instanceof Error ? error.message : 'Unsupported or damaged file.', variant: 'destructive' })
@@ -306,11 +322,16 @@ export function LocalCatalogueImport() {
       normalPrice: mapping.normalPrice, promoPrice: mapping.promoPrice, promoOffer: mapping.promoOffer, notes: mapping.notes,
       startDate: mapping.startDate, endDate: mapping.endDate,
     }
-    const storeName = stores.find(s => s.id === defaultStore)?.name
+    if (defaultStore === ALL_RETAILERS && !mapping.store) {
+      toast({ title: 'Store Name column required', description: 'Choose the Store Name column so each CSV row is assigned to its own retailer.', variant: 'destructive' })
+      return
+    }
+    const storeName = defaultStore === ALL_RETAILERS ? undefined : stores.find(s => s.id === defaultStore)?.name
     const built = buildReviewRows(file.records, coreMap, { defaultStoreName: storeName, defaultStart: file.defaultStart, defaultEnd: file.defaultEnd })
     const checked = built.map(row => {
       const issues = [...row.issues]
-      if (!row.storeName || !stores.some(s => s.name.toLowerCase() === row.storeName.toLowerCase())) {
+      const resolvedStoreName = canonicalStoreName(row.storeName)
+      if (!resolvedStoreName || !stores.some(s => s.name.toLowerCase() === resolvedStoreName.toLowerCase())) {
         issues.push({ code: 'unknown-store', message: `Store “${row.storeName || '(blank)'}” is not in the store catalogue`, severity: 'error' as const })
       }
       if ((row.promoPrice != null || row.multiBuyQuantity != null) && (!row.startDate || !row.endDate)) {
@@ -320,7 +341,7 @@ export function LocalCatalogueImport() {
       if (categoryValue && !categories.some(c => c.name.toLowerCase() === categoryValue.toLowerCase())) {
         issues.push({ code: 'unknown-category', message: `Category “${categoryValue}” was not found; choose a valid category in the source file`, severity: 'error' as const })
       }
-      return { ...row, issues }
+      return { ...row, storeName: resolvedStoreName, issues }
     })
     setRows(checked)
     setSummary(null)
@@ -409,15 +430,17 @@ export function LocalCatalogueImport() {
   return <div className="space-y-4">
     <section className="rounded-2xl border border-zinc-800 bg-zinc-900 p-5 space-y-3">
       <div className="flex items-center gap-2"><FileSpreadsheet className="h-5 w-5 text-sky-400" /><h2 className="font-bold text-sm">Local catalogue import</h2></div>
-      <p className="text-xs leading-relaxed text-zinc-400">CSV and Excel files are read inside this browser. Nothing is uploaded and nothing changes in the live catalogue. Choose a default retailer for rows without a store column.</p>
+      <p className="text-xs leading-relaxed text-zinc-400">CSV and Excel files are read inside this browser. Nothing is uploaded and nothing changes in the live catalogue. Choose a retailer for single-store files, or All Retailers when the CSV contains a Store Name column.</p>
       <div className="flex flex-wrap items-center gap-2">
         <Button type="button" variant="outline" onClick={downloadImportTemplate} className="border-zinc-700 text-zinc-200"><Download className="mr-2 h-4 w-4" /> Download import template</Button>
         <span className="text-[10px] text-zinc-500">One product per row · Excel or CSV · review before saving</span>
       </div>
       <label className="block text-[10px] font-bold uppercase text-zinc-400">Default retailer</label>
       <select value={defaultStore} onChange={e => setDefaultStore(e.target.value)} className="w-full rounded-lg border border-zinc-700 bg-zinc-800 p-2.5 text-sm text-white">
+        <option value={ALL_RETAILERS}>All Retailers — use CSV Store Name for every row</option>
         {stores.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
       </select>
+      {defaultStore === ALL_RETAILERS && <p className="text-[11px] text-sky-300">Combined retailer mode: every row must have a recognised Store Name. Blank or unknown retailers are blocked from saving.</p>}
       <div className="space-y-2 rounded-xl border border-zinc-700 bg-zinc-800/60 p-3">
         <label htmlFor="flyer-image-url" className="block text-[10px] font-bold uppercase text-zinc-400">Or paste a direct flyer page image link</label>
         <input
