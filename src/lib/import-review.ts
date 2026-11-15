@@ -85,7 +85,7 @@ export function parseDate(value: unknown): string | null {
     const year = Number(iso[1]), month = Number(iso[2]), day = Number(iso[3])
     const date = new Date(Date.UTC(year, month - 1, day))
     return date.getUTCFullYear() === year && date.getUTCMonth() === month - 1 && date.getUTCDate() === day
-      ? \`${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}\` : null
+      ? `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}` : null
   }
   // Some CSV/XLSX parsers stringify Excel serial dates instead of returning numbers.
   if (/^\d{4,5}(?:\.0+)?$/.test(raw)) {
@@ -100,7 +100,7 @@ export function parseDate(value: unknown): string | null {
     const day = Number(local[1]), month = Number(local[2]), year = Number(local[3])
     const date = new Date(Date.UTC(year, month - 1, day))
     if (date.getUTCFullYear() !== year || date.getUTCMonth() !== month - 1 || date.getUTCDate() !== day) return null
-    return \`${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}\`
+    return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`
   }
   return null
 }
