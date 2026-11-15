@@ -67,6 +67,15 @@ export function parsePrice(value: unknown): number | null {
 }
 
 export function parseDate(value: unknown): string | null {
+  if (value instanceof Date && Number.isFinite(value.getTime())) {
+    return value.toISOString().slice(0, 10)
+  }
+  // Excel stores dates as day counts from 1899-12-30. Accept these when a
+  // worksheet parser supplies numeric date cells instead of formatted text.
+  if (typeof value === 'number' && Number.isFinite(value) && value > 0 && value < 100000) {
+    const date = new Date(Date.UTC(1899, 11, 30) + Math.round(value) * 86400000)
+    return Number.isFinite(date.getTime()) ? date.toISOString().slice(0, 10) : null
+  }
   const raw = text(value)
   if (!raw) return null
   const iso = raw.match(/^(\d{4})-(\d{2})-(\d{2})(?:T.*)?$/)
@@ -118,20 +127,40 @@ export function autoMap(headers: string[]): ImportColumnMap {
     promoPrice: pick([/^promo(price)?$/, /^special(price)?$/, /^selling(price)?$/, /^now(price)?$/, /^deal(price)?$/]),
     promoOffer: pick([/^(?:price)?offer$/, /^promotionoffer$/, /^dealdescription$/, /^offertext$/, /^specialoffer$/]),
     notes: pick([/^notes?$/, /^remarks?$/, /^additionalinfo$/]),
-    startDate: pick([/^start(date)?$/, /^valid(from|fromdate)?$/, /^from(date)?$/, /^datefrom$/]),
-    endDate: pick([/^end(date)?$/, /^valid(to|todate)?$/, /^to(date)?$/, /^dateto$/, /^expiry(date)?$/]),
+    startDate: pick([/^start(date)?$/, /^(?:promo|promotion)start(date)?$/, /^valid(from|fromdate)?$/, /^from(date)?$/, /^datefrom$/, /^offerstart(date)?$/]),
+    endDate: pick([/^end(date)?$/, /^(?:promo|promotion)end(date)?$/, /^valid(to|todate)?$/, /^to(date)?$/, /^dateto$/, /^expiry(date)?$/, /^offerend(date)?$/]),
   }
 }
 
 const numberWords: Record<string, number> = { one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9, ten: 10 }
 
 export function parseMultiBuyOffer(value: unknown): { quantity: number; bundlePrice: number } | null {
-  const raw = text(value).replace(/,/g, '.')
-  const match = raw.match(/\b(?:BUY\s+)?(\d+|one|two|three|four|five|six|seven|eight|nine|ten)\s+(?:FOR\s+)?R?\s*(\d+(?:\.\d{1,2})?)\b/i)
-  if (!match) return null
-  const quantity = Number(match[1]) || numberWords[match[1].toLowerCase()]
-  const bundlePrice = parsePrice(match[2])
-  return quantity > 0 && bundlePrice != null ? { quantity, bundlePrice } : null
+  const raw = text(value)
+  const quantityOf = (value: string) => Number(value) || numberWords[value.toLowerCase()] || 0
+  const priceOf = (value: string) => parsePrice(value.replace(/,/g, ''))
+  // Prefer the explicit final total in flyer annotations; earlier amounts may
+  // be savings or pack sizes rather than the bundle price.
+  const mustBuy = raw.match(/must\s+buy\s+(\d+|one|two|three|four|five|six|seven|eight|nine|ten)\s+to\s+get\s+R?\s*([\d,]+(?:\.\d{1,2})?)/i)
+  if (mustBuy) {
+    const quantity = quantityOf(mustBuy[1])
+    const bundlePrice = priceOf(mustBuy[2])
+    return quantity > 0 && bundlePrice != null ? { quantity, bundlePrice } : null
+  }
+  const bothFor = raw.match(/\bboth\s+for\s+R?\s*([\d,]+(?:\.\d{1,2})?)/i)
+  if (bothFor) {
+    const bundlePrice = priceOf(bothFor[1])
+    return bundlePrice != null ? { quantity: 2, bundlePrice } : null
+  }
+  const buyCount = raw.match(/\bbuy\s+(\d+|one|two|three|four|five|six|seven|eight|nine|ten)\b/i)
+  const quantityFor = raw.match(/\b(?:any\s+)?(\d+|one|two|three|four|five|six|seven|eight|nine|ten)\s+for\s+R?\s*([\d,]+(?:\.\d{1,2})?)/i)
+  const packCountFor = raw.match(/\b(\d+)\s*[x×]\s*.*?\bfor\s+R?\s*([\d,]+(?:\.\d{1,2})?)/i)
+  const match = quantityFor || packCountFor
+  if (match) {
+    const quantity = quantityOf(buyCount?.[1] || match[1])
+    const bundlePrice = priceOf(match[2])
+    return quantity > 0 && bundlePrice != null ? { quantity, bundlePrice } : null
+  }
+  return null
 }
 
 export function parseSingleItemPrice(value: unknown): number | null {
@@ -158,7 +187,7 @@ export function buildReviewRows(
     const promoOffer = text(mapping.promoOffer ? raw[mapping.promoOffer] : '')
     const notes = text(mapping.notes ? raw[mapping.notes] : '')
     const multiBuy = parseMultiBuyOffer(promoOffer)
-    const multiBuyOffer = /\bBUY\s+(?:\d+|ONE|TWO|THREE|FOUR|FIVE|SIX|SEVEN|EIGHT|NINE|TEN)\b|\b(?:\d+|one|two|three|four|five|six|seven|eight|nine|ten)\s+FOR\s+R?\s*\d/i.test(promoOffer)
+    const multiBuyOffer = /\bBUY\s+(?:\d+|ONE|TWO|THREE|FOUR|FIVE|SIX|SEVEN|EIGHT|NINE|TEN)\b|\bMUST\s+BUY\s+\d+\b|\b(?:\d+|one|two|three|four|five|six|seven|eight|nine|ten)\s+FOR\s+R?\s*\d|\bBOTH\s+FOR\b|\b\d+\s*[x×].*?\bFOR\s+R/i.test(promoOffer)
     const singleItemPrice = parseSingleItemPrice(notes)
     const explicitPromoPrice = parsePrice(mapping.promoPrice ? raw[mapping.promoPrice] : null)
     const promoPrice = explicitPromoPrice ?? (multiBuyOffer ? null : (promoOffer ? parsePrice(promoOffer) : null))
