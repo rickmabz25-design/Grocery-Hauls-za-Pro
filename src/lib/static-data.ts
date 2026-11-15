@@ -93,23 +93,7 @@ export async function applyLocalCatalogueImport(rows: Array<{
   const multiBuyPromos = [...overrides.multiBuyPromos]
   let productsCreated = 0, productsUpdated = 0, pricesUpserted = 0, promosCreated = 0, multiBuyPromosCreated = 0, multiBuyPromosUpdated = 0, multiBuyPromosProcessed = 0
   const makeId = () => `local_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 9)}`
-  const inferredCategoryFor = (name: string) => {
-    const normalized = name.toLowerCase()
-    const rules: Array<[string, string]> = [
-      ['illovo brown sugar', 'Sugar & Baking'],
-      ['excella sunflower oil', 'Cooking Oil & Staples'],
-      ['ellis brown creamer', 'Eggs & Dairy'],
-      ['tastic long grain parboiled white rice', 'Maize, Rice & Grains'],
-      ['golden ray iqf mixed chicken portions', 'Meat & Chicken'],
-      ["kellogg's corn flakes", 'Breakfast Cereals'],
-      ['large eggs', 'Eggs & Dairy'],
-      ['baby steps disposable nappies', 'Baby Products'],
-      ['surf hand washing powder', 'Cleaning Products'],
-      ['shibobo super maize meal', 'Maize, Rice & Grains'],
-    ]
-    const match = rules.find(([productName]) => normalized.includes(productName))
-    return match ? categories.find((category) => category.name === match[1]) : undefined
-  }
+  const inferredCategoryFor = (name: string) => categoryForProductName(name, categories)
   for (const row of rows) {
     const store = stores.find((s) => s.id === row.storeId)
     if (!store) throw new Error(`Unknown store for ${row.name}`)
@@ -204,10 +188,11 @@ export async function importLocalCatalogueBackup(input: {
   const incomingProducts = readRows(input.products, 'products')
   const incomingPromos = readRows(input.promos, 'promos')
   const incomingMultiBuy = readRows(input.multiBuyPromos, 'multiBuyPromos')
-  const [baseProducts, basePromos, baseMultiBuy] = await Promise.all([
+  const [baseProducts, basePromos, baseMultiBuy, categories] = await Promise.all([
     jsonFile<{ products: AnyRecord[] }>('/data/products.json'),
     jsonFile<{ promos: AnyRecord[] }>('/data/promos.json'),
     jsonFile<{ multiBuyPromos?: AnyRecord[] }>('/data/multi-buy-promos.json').catch(() => ({ multiBuyPromos: [] })),
+    getCategories(),
   ])
   const changedOnly = (incoming: AnyRecord[], base: AnyRecord[]) => {
     const baseline = new Map(base.map((row) => [row.id, JSON.stringify(row)]))
@@ -222,10 +207,19 @@ export async function importLocalCatalogueBackup(input: {
     incoming.forEach((row) => merged.set(row.id, row))
     return [...merged.values()]
   }
+  const mergedProducts = mergeById(current.products, localProducts)
+    .map((product) => normalizeProductCategory(product, categories))
+  const productById = new Map(mergedProducts.map((product) => [product.id, product]))
+  const normalizeOfferCategory = (offer: AnyRecord) => {
+    const product = productById.get(offer.productId)
+    const category = categoryForProductName(offer.name || product?.name, categories)
+      || (product ? categories.find((entry) => entry.id === product.categoryId) : undefined)
+    return category ? { ...offer, category: { id: category.id, name: category.name, icon: category.icon || '🛒' } } : offer
+  }
   const next = {
-    products: mergeById(current.products, localProducts),
-    promos: mergeById(current.promos, localPromos),
-    multiBuyPromos: mergeById(current.multiBuyPromos, localMultiBuy),
+    products: mergedProducts,
+    promos: mergeById(current.promos, localPromos).map(normalizeOfferCategory),
+    multiBuyPromos: mergeById(current.multiBuyPromos, localMultiBuy).map(normalizeOfferCategory),
   }
   window.localStorage.setItem(CATALOGUE_OVERRIDE_KEY, JSON.stringify(next))
   return {
@@ -255,15 +249,50 @@ export async function exportLocalCatalogueSnapshot() {
   return { products: [...products.values()], promos: [...promos.values()], multiBuyPromos: [...multiBuyPromos.values()], exportedAt: nowIso() }
 }
 
-const getProducts = async () => {
-  const base = (await jsonFile<{ products: AnyRecord[] }>('/data/products.json')).products
-  const overrides = readCatalogueOverrides().products
-  const merged = new Map<string, AnyRecord>(base.map((p): [string, AnyRecord] => [p.id, p]))
-  overrides.forEach((p) => merged.set(p.id, p))
-  return [...merged.values()]
-}
 const getStores = async () => (await jsonFile<{ stores: AnyRecord[] }>('/data/stores.json')).stores
 const getCategories = async () => (await jsonFile<{ categories: AnyRecord[] }>('/data/categories.json')).categories
+
+// Product-name rules repair stale category snapshots restored from older browser backups.
+// Name-based corrections take precedence over embedded category IDs from those backups.
+const categoryForProductName = (name: unknown, categories: AnyRecord[]) => {
+  const normalized = normalizeProductName(name)
+  const rules: Array<[string, string]> = [
+    ['illovo brown sugar', 'Sugar & Baking'],
+    ['excella sunflower oil', 'Cooking Oil & Staples'],
+    ['ellis brown creamer', 'Eggs & Dairy'],
+    ['tastic long grain parboiled white rice', 'Maize, Rice & Grains'],
+    ['golden ray iqf mixed chicken portions', 'Meat & Chicken'],
+    ["kellogg s corn flakes", 'Breakfast Cereals'],
+    ['large eggs', 'Eggs & Dairy'],
+    ['baby steps disposable nappies', 'Baby Products'],
+    ['surf hand washing powder', 'Cleaning Products'],
+    ['shibobo super maize meal', 'Maize, Rice & Grains'],
+    ['koo baked beans', 'Canned Food'],
+    ['lucky star instant noodles', 'Pasta & Noodles'],
+    ['albany superior sliced brown bread', 'Bread & Bakery'],
+  ]
+  const match = rules.find(([productName]) => normalized.includes(productName))
+  return match ? categories.find((category) => category.name === match[1]) : undefined
+}
+const normalizeProductCategory = (product: AnyRecord, categories: AnyRecord[]) => {
+  const category = categoryForProductName(product.name, categories)
+    || categories.find((entry) => entry.id === (product.categoryId || product.category?.id))
+  return category ? {
+    ...product,
+    categoryId: category.id,
+    category: { id: category.id, name: category.name, icon: category.icon || '🛒' },
+  } : product
+}
+const getProducts = async () => {
+  const [base, categories] = await Promise.all([
+    jsonFile<{ products: AnyRecord[] }>('/data/products.json'),
+    getCategories(),
+  ])
+  const overrides = readCatalogueOverrides().products
+  const merged = new Map<string, AnyRecord>(base.products.map((p): [string, AnyRecord] => [p.id, p]))
+  overrides.forEach((p) => merged.set(p.id, p))
+  return [...merged.values()].map((product) => normalizeProductCategory(product, categories))
+}
 const getPromos = async (ctx?: StaticContext) => {
   if (ctx?.mergedPromos) return ctx.mergedPromos()
   const base = (await jsonFile<{ promos: AnyRecord[] }>('/data/promos.json')).promos
@@ -650,18 +679,9 @@ export async function handleStaticApi(method: string, path: string, body: AnyRec
     // correction for the Boxer flyer sugar product.
     const categoryForPromotion = (productId: string, name: string, fallback: AnyRecord) => {
       const product = products.find((entry) => entry.id === productId)
-      // Check both names: some saved promotion snapshots have a different
-      // display name from the linked catalogue product.
-      const names = [name, product?.name].filter(Boolean).map((value) => String(value).toLowerCase())
-      if (names.some((value) => value.includes('illovo brown sugar'))) {
-        const sugarCategory = categories.find((entry) => entry.name === 'Sugar & Baking')
-        if (sugarCategory) return { id: sugarCategory.id, name: sugarCategory.name, icon: sugarCategory.icon || '🧁' }
-      }
-      // Always resolve the product's category ID against the current category
-      // catalogue instead of trusting an older embedded category snapshot.
-      const categoryId = product?.categoryId || product?.category?.id
-      const currentCategory = categories.find((entry) => entry.id === categoryId)
-      if (currentCategory) return { id: currentCategory.id, name: currentCategory.name, icon: currentCategory.icon || '🛒' }
+      const category = categoryForProductName(name || product?.name, categories)
+        || (product ? categories.find((entry) => entry.id === product.categoryId) : undefined)
+      if (category) return { id: category.id, name: category.name, icon: category.icon || '🛒' }
       return product?.category || fallback
     }
     const overrides = readCatalogueOverrides()
