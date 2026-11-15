@@ -95,9 +95,13 @@ export function parseDate(value: unknown): string | null {
       return Number.isFinite(date.getTime()) ? date.toISOString().slice(0, 10) : null
     }
   }
-  const local = raw.match(/^(\d{1,2})[/.-](\d{1,2})[/.-](\d{4})$/)
+  // South African CSV exports commonly use D/M/YY (for example, 11/9/26
+  // means 11 September 2026). Keep day-first ordering and expand two-digit years.
+  const local = raw.match(/^(\d{1,2})[/.-](\d{1,2})[/.-](\d{2}|\d{4})$/)
   if (local) {
-    const day = Number(local[1]), month = Number(local[2]), year = Number(local[3])
+    const day = Number(local[1]), month = Number(local[2])
+    const yearPart = Number(local[3])
+    const year = local[3].length === 2 ? (yearPart <= 69 ? 2000 + yearPart : 1900 + yearPart) : yearPart
     const date = new Date(Date.UTC(year, month - 1, day))
     if (date.getUTCFullYear() !== year || date.getUTCMonth() !== month - 1 || date.getUTCDate() !== day) return null
     return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`
