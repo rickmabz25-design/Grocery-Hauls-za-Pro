@@ -387,7 +387,7 @@ export function LocalCatalogueImport() {
           brand: mapping.brand ? String(row.raw[mapping.brand] || '').trim() : '',
           categoryId: category?.id, normalPrice: row.normalPrice, promoPrice: row.promoPrice,
           multiBuyQuantity: row.multiBuyQuantity, multiBuyPrice: row.multiBuyPrice, singleItemPrice: row.singleItemPrice,
-          offerText: row.promoOffer.replace(/â€¢|â€¢|•/g, 'and'), startDate: row.startDate, endDate: row.endDate,
+          offerText: row.promoOffer.replace(/â€¢|•/g, 'and'), startDate: row.startDate, endDate: row.endDate,
         }
       })
       const result = await applyLocalCatalogueImport(payload)
