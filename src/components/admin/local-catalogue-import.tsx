@@ -19,7 +19,7 @@ const ALL_RETAILERS = '__all_retailers__'
 
 function canonicalStoreName(value: string): string {
   const raw = value.trim()
-  const key = raw.toLowerCase().replace(/\\s+/g, ' ')
+  const key = raw.toLowerCase().replace(/\s+/g, ' ')
   const aliases: Record<string, string> = {
     'boxer superstores': 'Boxer',
     'boxer superstore': 'Boxer',
