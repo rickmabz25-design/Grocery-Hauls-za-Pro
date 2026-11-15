@@ -387,7 +387,7 @@ export function LocalCatalogueImport() {
           brand: mapping.brand ? String(row.raw[mapping.brand] || '').trim() : '',
           categoryId: category?.id, normalPrice: row.normalPrice, promoPrice: row.promoPrice,
           multiBuyQuantity: row.multiBuyQuantity, multiBuyPrice: row.multiBuyPrice, singleItemPrice: row.singleItemPrice,
-          offerText: row.promoOffer, startDate: row.startDate, endDate: row.endDate,
+          offerText: row.promoOffer.replace(/â€¢|â€¢|•/g, 'and'), startDate: row.startDate, endDate: row.endDate,
         }
       })
       const result = await applyLocalCatalogueImport(payload)
@@ -574,7 +574,7 @@ export function LocalCatalogueImport() {
         {rows.map(row => <div key={row.sourceIndex} className="rounded-lg border border-zinc-800 p-3 text-xs">
           <div className="flex items-start justify-between gap-2"><b>{row.name || '(missing product name)'}</b><span className={rowHasError(row) ? 'text-red-400' : 'text-lime-400'}>{rowHasError(row) ? 'Needs correction' : 'Ready'}</span></div>
           <p className="mt-1 text-zinc-400">{row.storeName} · Normal {row.normalPrice == null ? '—' : `R${row.normalPrice.toFixed(2)}`} · Promo {row.promoPrice == null ? '—' : `R${row.promoPrice.toFixed(2)}`}</p>
-          {(row.startDate || row.endDate) && <p className="mt-1 text-zinc-400">Promotion dates: {row.startDate || 'missing'} to {row.endDate || 'missing'}</p>}
+          {(row.promoPrice != null || row.multiBuyOffer) && <p className="mt-1 text-zinc-400">Promotion dates: {row.startDate || 'missing'} to {row.endDate || 'missing'}</p>}
           {row.promoOffer && <p className="mt-1 text-sky-300">Flyer offer: {row.promoOffer.replace(/â€¢|â\u0080¢/g, 'and').replace(/•/g, 'and')}</p>}
           {row.multiBuyQuantity != null && row.multiBuyPrice != null && <p className="mt-1 font-medium text-emerald-300">Multi-buy: {row.multiBuyQuantity} items for R{row.multiBuyPrice.toFixed(2)} · R{(row.multiBuyPrice / row.multiBuyQuantity).toFixed(2)} per item</p>}
           {row.singleItemPrice != null && <p className="mt-1 text-lime-300">Single-item price: R{row.singleItemPrice.toFixed(2)}</p>}
