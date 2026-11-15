@@ -328,10 +328,20 @@ export function LocalCatalogueImport() {
 
   const review = () => {
     if (!file) return
+    // Keep date mapping resilient when a CSV/XLSX header uses a common
+    // variation or the mapping selector was left blank.
+    const headerKey = (header: string) => header.toLowerCase().replace(/[^a-z0-9]/g, '')
+    const findDateHeader = (kind: 'start' | 'end') => file.headers.find(header => {
+      const key = headerKey(header)
+      return kind === 'start'
+        ? /^(startdate|promostartdate|promotionstartdate|offerstartdate|validfrom|validfromdate|from|fromdate|datefrom)$/.test(key)
+        : /^(enddate|promoenddate|promotionenddate|offerenddate|validto|validtodate|to|todate|dateto|expirydate)$/.test(key)
+    })
     const coreMap = {
       name: mapping.name, store: mapping.store, unit: mapping.unit,
       normalPrice: mapping.normalPrice, promoPrice: mapping.promoPrice, promoOffer: mapping.promoOffer, notes: mapping.notes,
-      startDate: mapping.startDate, endDate: mapping.endDate,
+      startDate: mapping.startDate || findDateHeader('start'),
+      endDate: mapping.endDate || findDateHeader('end'),
     }
     if (defaultStore === ALL_RETAILERS && !mapping.store) {
       toast({ title: 'Store Name column required', description: 'Choose the Store Name column so each CSV row is assigned to its own retailer.', variant: 'destructive' })
