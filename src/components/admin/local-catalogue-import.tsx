@@ -41,6 +41,10 @@ function canonicalCategoryName(value: string): string {
   return aliases[key] || value.trim()
 }
 
+function catalogueKey(value: string): string {
+  return value.normalize('NFKD').replace(/[\\u0300-\\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]/g, '')
+}
+
 const fields = [
   ['name', 'Product name *'], ['store', 'Store (optional if default selected)'],
   ['unit', 'Size / pack'], ['normalPrice', 'Normal price'], ['promoPrice', 'Promo price'],
@@ -87,12 +91,12 @@ export function LocalCatalogueImport() {
 
   useEffect(() => {
     setSavedCounts(getLocalCatalogueOverrideCounts())
-    fetch('/data/stores.json').then(r => r.json()).then(d => {
+    fetch('/data/stores.json', { cache: 'no-store' }).then(r => r.json()).then(d => {
       const list = Array.isArray(d.stores) ? d.stores : []
       setStores(list)
       if (list.length) setDefaultStore(list[0].id)
     }).catch(() => toast({ title: 'Could not load stores', description: 'The local store catalogue could not be read.', variant: 'destructive' }))
-    fetch('/data/categories.json').then(r => r.json()).then(d => setCategories(Array.isArray(d.categories) ? d.categories : []))
+    fetch('/data/categories.json', { cache: 'no-store' }).then(r => r.json()).then(d => setCategories(Array.isArray(d.categories) ? d.categories : []))
       .catch(() => toast({ title: 'Could not load categories', variant: 'destructive' }))
   }, [])
 
@@ -352,7 +356,7 @@ export function LocalCatalogueImport() {
     const checked = built.map(row => {
       const issues = [...row.issues]
       const resolvedStoreName = canonicalStoreName(row.storeName)
-      if (!resolvedStoreName || !stores.some(s => s.name.toLowerCase() === resolvedStoreName.toLowerCase())) {
+      if (!resolvedStoreName || !stores.some(s => catalogueKey(s.name) === catalogueKey(resolvedStoreName))) {
         issues.push({ code: 'unknown-store', message: `Store “${row.storeName || '(blank)'}” is not in the store catalogue`, severity: 'error' as const })
       }
       if ((row.promoPrice != null || row.multiBuyQuantity != null) && (!row.startDate || !row.endDate)) {
@@ -360,7 +364,7 @@ export function LocalCatalogueImport() {
       }
       const categoryValue = mapping.category ? String(row.raw[mapping.category] || '').trim() : ''
       const canonicalCategory = canonicalCategoryName(categoryValue)
-      if (categoryValue && !categories.some(c => c.name.toLowerCase() === canonicalCategory.toLowerCase())) {
+      if (categoryValue && !categories.some(c => catalogueKey(c.name) === catalogueKey(canonicalCategory))) {
         issues.push({ code: 'unknown-category', message: `Category “${categoryValue}” was not found; choose a valid category in the source file`, severity: 'error' as const })
       }
       return { ...row, storeName: resolvedStoreName, issues }
@@ -373,10 +377,10 @@ export function LocalCatalogueImport() {
     setBusy(true)
     try {
       const payload = approved.map(row => {
-        const store = stores.find(s => s.name.toLowerCase() === row.storeName.toLowerCase())!
+        const store = stores.find(s => catalogueKey(s.name) === catalogueKey(row.storeName))!
         const categoryName = mapping.category ? String(row.raw[mapping.category] || '').trim() : ''
         const canonicalCategory = canonicalCategoryName(categoryName)
-        const category = categories.find(c => c.name.toLowerCase() === canonicalCategory.toLowerCase())
+        const category = categories.find(c => catalogueKey(c.name) === catalogueKey(canonicalCategory))
         return {
           name: row.name, storeId: store.id, unit: row.unit,
           barcode: mapping.barcode ? String(row.raw[mapping.barcode] || '').trim() : '',
@@ -570,7 +574,8 @@ export function LocalCatalogueImport() {
         {rows.map(row => <div key={row.sourceIndex} className="rounded-lg border border-zinc-800 p-3 text-xs">
           <div className="flex items-start justify-between gap-2"><b>{row.name || '(missing product name)'}</b><span className={rowHasError(row) ? 'text-red-400' : 'text-lime-400'}>{rowHasError(row) ? 'Needs correction' : 'Ready'}</span></div>
           <p className="mt-1 text-zinc-400">{row.storeName} · Normal {row.normalPrice == null ? '—' : `R${row.normalPrice.toFixed(2)}`} · Promo {row.promoPrice == null ? '—' : `R${row.promoPrice.toFixed(2)}`}</p>
-          {row.promoOffer && <p className="mt-1 text-sky-300">Flyer offer: {row.promoOffer}</p>}
+          {(row.startDate || row.endDate) && <p className="mt-1 text-zinc-400">Promotion dates: {row.startDate || 'missing'} to {row.endDate || 'missing'}</p>}
+          {row.promoOffer && <p className="mt-1 text-sky-300">Flyer offer: {row.promoOffer.replace(/â€¢|â\u0080¢/g, 'and').replace(/•/g, 'and')}</p>}
           {row.multiBuyQuantity != null && row.multiBuyPrice != null && <p className="mt-1 font-medium text-emerald-300">Multi-buy: {row.multiBuyQuantity} items for R{row.multiBuyPrice.toFixed(2)} · R{(row.multiBuyPrice / row.multiBuyQuantity).toFixed(2)} per item</p>}
           {row.singleItemPrice != null && <p className="mt-1 text-lime-300">Single-item price: R{row.singleItemPrice.toFixed(2)}</p>}
           {row.notes && <p className="mt-1 text-zinc-400">Notes: {row.notes}</p>}
