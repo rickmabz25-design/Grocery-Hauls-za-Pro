@@ -62,17 +62,12 @@ export function SpecialsView() {
       if (category) params.set('category', category)
       params.set('sort', sort)
       const data = await apiGet<{ promos: PromoCard[] }>(`/api/promos?${params}`)
-      // Keep the flyer product's category correct at the final card boundary too.
-      // This protects Specials from stale category snapshots in older browser-local imports.
-      const normalizedPromos = data.promos.map((promo) =>
-        promo.name.toLowerCase().includes('illovo brown sugar')
-          ? { ...promo, category: { id: 'sugar-baking', name: 'Sugar & Baking', icon: '🧁' } }
-          : promo
-      )
+      // Categories are normalized in the shared catalogue layer so every
+      // screen receives the same corrected product category.
       setPromos(
         q.trim()
-          ? normalizedPromos.filter((p) => p.name.toLowerCase().includes(q.trim().toLowerCase()))
-          : normalizedPromos
+          ? data.promos.filter((p) => p.name.toLowerCase().includes(q.trim().toLowerCase()))
+          : data.promos
       )
     } catch {
       setPromos([])
