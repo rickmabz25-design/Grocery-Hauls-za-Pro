@@ -42,7 +42,7 @@ function canonicalCategoryName(value: string): string {
 }
 
 function catalogueKey(value: string): string {
-  return value.normalize('NFKD').replace(/[\\u0300-\\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]/g, '')
+  return value.toLowerCase().replace(/[^a-z0-9]/g, '')
 }
 
 const fields = [
