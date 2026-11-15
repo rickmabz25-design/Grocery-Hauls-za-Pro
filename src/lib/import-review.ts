@@ -138,7 +138,7 @@ export function autoMap(headers: string[]): ImportColumnMap {
     promoOffer: pick([/^(?:price)?offer$/, /^promotionoffer$/, /^dealdescription$/, /^offertext$/, /^specialoffer$/]),
     notes: pick([/^notes?$/, /^remarks?$/, /^additionalinfo$/]),
     startDate: pick([/^start(date)?$/, /^(?:promo|promotion)start(date)?$/, /^valid(from|fromdate)?$/, /^from(date)?$/, /^datefrom$/, /^offerstart(date)?$/]),
-    endDate: pick([/^end(date)?$/, /^(?:promo|promotion)end(date)?$/, /^valid(to|todate)?$/, /^to(date)?$/, /^dateto$/, /^expiry(date)?$/, /^offerend(date)?$/]),
+    endDate: pick([/^end(date)?$/, /^(?:promo|promotion)end(date)?$/, /^valid(until|untildate|to|todate)?$/, /^to(date)?$/, /^dateto$/, /^expiry(date)?$/, /^offerend(date)?$/]),
   }
 }
 
