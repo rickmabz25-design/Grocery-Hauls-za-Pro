@@ -272,7 +272,23 @@ const categoryForProductName = (name: unknown, categories: AnyRecord[]) => {
     ['albany superior sliced brown bread', 'Bread & Bakery'],
   ]
   const match = rules.find(([productName]) => normalized.includes(productName))
-  return match ? categories.find((category) => category.name === match[1]) : undefined
+  if (!match) return undefined
+  const categoryName = match[1]
+  const categoryIds: Record<string, string> = {
+    'Sugar & Baking': 'sugar-baking',
+    'Canned Food': 'canned-food',
+    'Pasta & Noodles': 'pasta-noodles',
+  }
+  const fallbackIcons: Record<string, string> = {
+    'Sugar & Baking': '🧁',
+    'Canned Food': '🥫',
+    'Pasta & Noodles': '🍝',
+  }
+  return categories.find((category) => category.name === categoryName) || (
+    categoryIds[categoryName]
+      ? { id: categoryIds[categoryName], name: categoryName, icon: fallbackIcons[categoryName] }
+      : undefined
+  )
 }
 const normalizeProductCategory = (product: AnyRecord, categories: AnyRecord[]) => {
   const category = categoryForProductName(product.name, categories)
