@@ -78,19 +78,29 @@ export function parseDate(value: unknown): string | null {
   }
   const raw = text(value)
   if (!raw) return null
-  const iso = raw.match(/^(\d{4})-(\d{2})-(\d{2})(?:T.*)?$/)
+  // CSV/XLSX readers may return ISO dates with a time suffix or use
+  // slash-separated year-first dates. Validate calendar parts explicitly.
+  const iso = raw.match(/^(\d{4})[-/](\d{1,2})[-/](\d{1,2})(?:[T\s].*)?$/)
   if (iso) {
-    const [, y, m, d] = iso
-    const date = new Date(Date.UTC(Number(y), Number(m) - 1, Number(d)))
-    return date.getUTCFullYear() === Number(y) && date.getUTCMonth() === Number(m) - 1 && date.getUTCDate() === Number(d)
-      ? `${y}-${m}-${d}` : null
+    const year = Number(iso[1]), month = Number(iso[2]), day = Number(iso[3])
+    const date = new Date(Date.UTC(year, month - 1, day))
+    return date.getUTCFullYear() === year && date.getUTCMonth() === month - 1 && date.getUTCDate() === day
+      ? \`\${year}-\${String(month).padStart(2, '0')}-\${String(day).padStart(2, '0')}\` : null
   }
-  const local = raw.match(/^(\d{1,2})[/.\-](\d{1,2})[/.\-](\d{4})$/)
+  // Some CSV/XLSX parsers stringify Excel serial dates instead of returning numbers.
+  if (/^\d{4,5}(?:\.0+)?$/.test(raw)) {
+    const serial = Number(raw)
+    if (serial > 0 && serial < 100000) {
+      const date = new Date(Date.UTC(1899, 11, 30) + Math.round(serial) * 86400000)
+      return Number.isFinite(date.getTime()) ? date.toISOString().slice(0, 10) : null
+    }
+  }
+  const local = raw.match(/^(\d{1,2})[/.-](\d{1,2})[/.-](\d{4})$/)
   if (local) {
     const day = Number(local[1]), month = Number(local[2]), year = Number(local[3])
     const date = new Date(Date.UTC(year, month - 1, day))
     if (date.getUTCFullYear() !== year || date.getUTCMonth() !== month - 1 || date.getUTCDate() !== day) return null
-    return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`
+    return \`\${year}-\${String(month).padStart(2, '0')}-\${String(day).padStart(2, '0')}\`
   }
   return null
 }
