@@ -26,8 +26,19 @@ function canonicalStoreName(value: string): string {
     'food lovers market': "Food Lover's Market",
     'shoprite liquorshop': 'Shoprite LiquorShop',
     'tops at spar': 'TOPS at SPAR',
+    'boxer liquor': 'Boxer Liquors',
   }
   return aliases[key] || raw
+}
+
+function canonicalCategoryName(value: string): string {
+  const key = value.trim().toLowerCase().replace(/\s+/g, ' ')
+  const aliases: Record<string, string> = {
+    'beverages': 'Drinks',
+    'snacks & confectionery': 'Snacks',
+    'personal care': 'Toiletries',
+  }
+  return aliases[key] || value.trim()
 }
 
 const fields = [
@@ -338,7 +349,8 @@ export function LocalCatalogueImport() {
         issues.push({ code: 'promo-dates-required', message: 'Promotion and multi-buy rows need valid start and end dates', severity: 'error' as const })
       }
       const categoryValue = mapping.category ? String(row.raw[mapping.category] || '').trim() : ''
-      if (categoryValue && !categories.some(c => c.name.toLowerCase() === categoryValue.toLowerCase())) {
+      const canonicalCategory = canonicalCategoryName(categoryValue)
+      if (categoryValue && !categories.some(c => c.name.toLowerCase() === canonicalCategory.toLowerCase())) {
         issues.push({ code: 'unknown-category', message: `Category “${categoryValue}” was not found; choose a valid category in the source file`, severity: 'error' as const })
       }
       return { ...row, storeName: resolvedStoreName, issues }
@@ -353,7 +365,8 @@ export function LocalCatalogueImport() {
       const payload = approved.map(row => {
         const store = stores.find(s => s.name.toLowerCase() === row.storeName.toLowerCase())!
         const categoryName = mapping.category ? String(row.raw[mapping.category] || '').trim() : ''
-        const category = categories.find(c => c.name.toLowerCase() === categoryName.toLowerCase())
+        const canonicalCategory = canonicalCategoryName(categoryName)
+        const category = categories.find(c => c.name.toLowerCase() === canonicalCategory.toLowerCase())
         return {
           name: row.name, storeId: store.id, unit: row.unit,
           barcode: mapping.barcode ? String(row.raw[mapping.barcode] || '').trim() : '',
