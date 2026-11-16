@@ -182,6 +182,15 @@ export function parseMultiBuyOffer(value: unknown): { quantity: number; bundlePr
     const bundlePrice = priceOf(bothFor[1])
     return bundlePrice != null ? { quantity: 2, bundlePrice } : null
   }
+  // Some flyer extracts repeat the quantity and pack size, e.g.
+  // "BUY TWO 2 x 135g R34". Use the leading BUY count as the deal quantity
+  // and the final currency amount as the bundle price.
+  const buyPackPrice = raw.match(/\bBUY\s+(\d+|one|two|three|four|five|six|seven|eight|nine|ten)\s+\d+\s*[x×]\s*\d+(?:[.,]\d+)?\s*(?:kg|g|ml|l)?\s+R?\s*([\d,]+(?:\.\d{1,2})?)(?![\d])/i)
+  if (buyPackPrice) {
+    const quantity = quantityOf(buyPackPrice[1])
+    const bundlePrice = priceOf(buyPackPrice[2])
+    return quantity > 0 && bundlePrice != null ? { quantity, bundlePrice } : null
+  }
   const buyCount = raw.match(/\bbuy\s+(\d+|one|two|three|four|five|six|seven|eight|nine|ten)\b/i)
   const quantityFor = raw.match(/\b(?:any\s+)?(\d+|one|two|three|four|five|six|seven|eight|nine|ten)\s+for\s+R?\s*([\d,]+(?:\.\d{1,2})?)/i)
   const packCountFor = raw.match(/\b(\d+)\s*[x×]\s*.*?\bfor\s+R?\s*([\d,]+(?:\.\d{1,2})?)/i)
