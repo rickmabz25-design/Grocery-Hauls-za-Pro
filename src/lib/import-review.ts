@@ -218,7 +218,7 @@ export function buildReviewRows(
     mapping.startDate ? raw[mapping.startDate] : null,
     mapping.endDate ? raw[mapping.endDate] : null,
   ]).map(text)
-  const dateParts = dateValues.map((value) => value.match(/^(\\d{1,2})[/.-](\\d{1,2})[/.-](?:\\d{2}|\\d{4})$/)).filter(Boolean)
+  const dateParts = dateValues.map((value) => value.match(/^(\d{1,2})[/.-](\d{1,2})[/.-](?:\d{2}|\d{4})$/)).filter(Boolean)
   const dateOrder: 'day-first' | 'month-first' =
     dateParts.some((match) => Number(match![2]) > 12 && Number(match![1]) <= 12)
       ? 'month-first'
