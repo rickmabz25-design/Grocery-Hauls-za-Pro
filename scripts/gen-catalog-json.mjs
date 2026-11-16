@@ -68,7 +68,23 @@ for (const store of checkedInStores) {
   if (key && !storesByName.has(key)) storesByName.set(key, store)
 }
 const stores = [...storesByName.values()].sort((a, b) => a.name.localeCompare(b.name))
-const categories = q(`SELECT * FROM Category ORDER BY sortOrder ASC`)
+const databaseCategories = q(`SELECT * FROM Category ORDER BY sortOrder ASC`)
+
+// Preserve supplemental categories in the checked-in static catalogue. The
+// seed database may not yet contain newer categories used by local imports.
+let checkedInCategories = []
+try {
+  const checkedIn = JSON.parse(readFileSync(path.join(OUT_DIR, 'categories.json'), 'utf8'))
+  checkedInCategories = Array.isArray(checkedIn.categories) ? checkedIn.categories : []
+} catch {
+  checkedInCategories = []
+}
+const categoriesByName = new Map(databaseCategories.map((category) => [category.name.trim().toLowerCase(), category]))
+for (const category of checkedInCategories) {
+  const key = String(category.name ?? '').trim().toLowerCase()
+  if (key && !categoriesByName.has(key)) categoriesByName.set(key, category)
+}
+const categories = [...categoriesByName.values()].sort((a, b) => a.sortOrder - b.sortOrder || a.name.localeCompare(b.name))
 const catById = new Map(categories.map((c) => [c.id, c]))
 const storeById = new Map(stores.map((s) => [s.id, s]))
 const productById = new Map(
