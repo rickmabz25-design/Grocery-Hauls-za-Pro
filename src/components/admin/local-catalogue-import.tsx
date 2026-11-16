@@ -100,6 +100,10 @@ export function LocalCatalogueImport() {
       .catch(() => toast({ title: 'Could not load categories', variant: 'destructive' }))
   }, [])
 
+  const inferredMapping = file ? autoMap(file.headers) as Record<string, string | undefined> : {}
+  // Resolve an explicit user choice first, then the detected heading. This keeps
+  // the selectors and review aligned if file/header state updates in separate renders.
+  const selectedColumn = (key: string) => mapping[key] || inferredMapping[key] || ''
   const counts = reviewSummary(rows)
   const approved = rows.filter(row => !rowHasError(row))
   const hasPromoWithoutDates = approved.some(row => (row.promoPrice != null || row.multiBuyQuantity != null) && (!row.startDate || !row.endDate))
@@ -345,12 +349,13 @@ export function LocalCatalogueImport() {
         (/(end|until|validto|validuntil|expiry|expires|expiration|validityend)/.test(key) && !/(start|from)/.test(key))
     })
     const coreMap = {
-      name: mapping.name, store: mapping.store, unit: mapping.unit,
-      normalPrice: mapping.normalPrice, promoPrice: mapping.promoPrice, promoOffer: mapping.promoOffer, notes: mapping.notes,
-      startDate: mapping.startDate || findDateHeader('start'),
-      endDate: mapping.endDate || findDateHeader('end'),
+      name: selectedColumn('name'), store: selectedColumn('store'), unit: selectedColumn('unit'),
+      normalPrice: selectedColumn('normalPrice'), promoPrice: selectedColumn('promoPrice'),
+      promoOffer: selectedColumn('promoOffer'), notes: selectedColumn('notes'),
+      startDate: selectedColumn('startDate') || findDateHeader('start'),
+      endDate: selectedColumn('endDate') || findDateHeader('end'),
     }
-    if (defaultStore === ALL_RETAILERS && !mapping.store) {
+    if (defaultStore === ALL_RETAILERS && !selectedColumn('store')) {
       toast({ title: 'Store Name column required', description: 'Choose the Store Name column so each CSV row is assigned to its own retailer.', variant: 'destructive' })
       return
     }
@@ -365,7 +370,8 @@ export function LocalCatalogueImport() {
       if ((row.promoPrice != null || row.multiBuyQuantity != null) && (!row.startDate || !row.endDate)) {
         issues.push({ code: 'promo-dates-required', message: 'Promotion and multi-buy rows need valid start and end dates', severity: 'error' as const })
       }
-      const categoryValue = mapping.category ? String(row.raw[mapping.category] || '').trim() : ''
+      const categoryColumn = selectedColumn('category')
+      const categoryValue = categoryColumn ? String(row.raw[categoryColumn] || '').trim() : ''
       const canonicalCategory = canonicalCategoryName(categoryValue)
       if (categoryValue && !categories.some(c => catalogueKey(c.name) === catalogueKey(canonicalCategory))) {
         issues.push({ code: 'unknown-category', message: `Category “${categoryValue}” was not found; choose a valid category in the source file`, severity: 'error' as const })
@@ -381,13 +387,14 @@ export function LocalCatalogueImport() {
     try {
       const payload = approved.map(row => {
         const store = stores.find(s => catalogueKey(s.name) === catalogueKey(row.storeName))!
-        const categoryName = mapping.category ? String(row.raw[mapping.category] || '').trim() : ''
+        const categoryColumn = selectedColumn('category')
+        const categoryName = categoryColumn ? String(row.raw[categoryColumn] || '').trim() : ''
         const canonicalCategory = canonicalCategoryName(categoryName)
         const category = categories.find(c => catalogueKey(c.name) === catalogueKey(canonicalCategory))
         return {
           name: row.name, storeId: store.id, unit: row.unit,
-          barcode: mapping.barcode ? String(row.raw[mapping.barcode] || '').trim() : '',
-          brand: mapping.brand ? String(row.raw[mapping.brand] || '').trim() : '',
+          barcode: selectedColumn('barcode') ? String(row.raw[selectedColumn('barcode')] || '').trim() : '',
+          brand: selectedColumn('brand') ? String(row.raw[selectedColumn('brand')] || '').trim() : '',
           categoryId: category?.id, normalPrice: row.normalPrice, promoPrice: row.promoPrice,
           multiBuyQuantity: row.multiBuyQuantity, multiBuyPrice: row.multiBuyPrice, singleItemPrice: row.singleItemPrice,
           offerText: row.promoOffer.replace(/â€¢|•/g, 'and'), startDate: row.startDate, endDate: row.endDate,
@@ -557,12 +564,12 @@ export function LocalCatalogueImport() {
       <h3 className="font-bold text-sm">Map columns</h3>
       <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
         {fields.map(([key, label]) => <label key={key} className="text-[10px] font-bold uppercase text-zinc-400">{label}
-          <select value={mapping[key] || ''} onChange={e => setMapping(m => ({ ...m, [key]: e.target.value }))} className="mt-1 h-9 w-full rounded-lg border border-zinc-700 bg-zinc-800 px-2 text-xs normal-case text-white">
+          <select value={selectedColumn(key)} onChange={e => setMapping(m => ({ ...m, [key]: e.target.value }))} className="mt-1 h-9 w-full rounded-lg border border-zinc-700 bg-zinc-800 px-2 text-xs normal-case text-white">
             <option value="">— skip —</option>{file.headers.map(h => <option key={h} value={h}>{h}</option>)}
           </select>
         </label>)}
       </div>
-      <Button onClick={review} disabled={!mapping.name || (!mapping.normalPrice && !mapping.promoPrice && !mapping.promoOffer)} className="bg-sky-600 hover:bg-sky-700">Review rows</Button>
+      <Button onClick={review} disabled={!selectedColumn('name') || (!selectedColumn('normalPrice') && !selectedColumn('promoPrice') && !selectedColumn('promoOffer'))} className="bg-sky-600 hover:bg-sky-700">Review rows</Button>
     </section>}
 
     {rows.length > 0 && <section className="rounded-2xl border border-zinc-800 bg-zinc-900 p-5 space-y-3">
