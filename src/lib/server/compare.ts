@@ -60,6 +60,7 @@ export type CompareResult = {
   mostExpensive: { storeId: string; name: string; total: number } | null
   overallCheaperBy: number
   split: SplitResult | null
+  splitMessage?: string | null
   itemCount: number
 }
 
