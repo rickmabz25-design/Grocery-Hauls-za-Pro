@@ -337,9 +337,12 @@ export function LocalCatalogueImport() {
     const headerKey = (header: string) => header.toLowerCase().replace(/[^a-z0-9]/g, '')
     const findDateHeader = (kind: 'start' | 'end') => file.headers.find(header => {
       const key = headerKey(header)
-      return kind === 'start'
-        ? /^(startdate|promostartdate|promotionstartdate|offerstartdate|validfrom|validfromdate|from|fromdate|datefrom)$/.test(key)
-        : /^(enddate|promoenddate|promotionenddate|offerenddate|validto|validtodate|validuntil|validuntildate|to|todate|dateto|expirydate)$/.test(key)
+      if (kind === 'start') {
+        return /^(startdate|promostartdate|promotionstartdate|offerstartdate|flyerstartdate|validfrom|validfromdate|from|fromdate|datefrom|validitystart|validityfrom)$/.test(key) ||
+          (/(start|from|validfrom|validitystart)/.test(key) && !/(end|until|expiry|expire|validto)/.test(key))
+      }
+      return /^(enddate|promoenddate|promotionenddate|offerenddate|flyerenddate|validto|validtodate|validuntil|validuntildate|to|todate|dateto|expirydate|expirationdate|expireson|validityend|validityuntil)$/.test(key) ||
+        (/(end|until|validto|validuntil|expiry|expires|expiration|validityend)/.test(key) && !/(start|from)/.test(key))
     })
     const coreMap = {
       name: mapping.name, store: mapping.store, unit: mapping.unit,
