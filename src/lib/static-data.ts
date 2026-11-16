@@ -72,6 +72,12 @@ function readCatalogueOverrides(): CatalogueOverrides {
   }
 }
 
+/** Counts persisted browser-local catalogue overrides; unlike the import toast, this survives page reloads. */
+export function getLocalCatalogueOverrideCounts() {
+  const saved = readCatalogueOverrides()
+  return { products: saved.products.length, promos: saved.promos.length, multiBuyPromos: saved.multiBuyPromos.length }
+}
+
 /** Apply reviewed import rows to this browser's shared catalogue overlay. */
 export async function applyLocalCatalogueImport(rows: Array<{
   name: string; storeId: string; unit?: string; barcode?: string; brand?: string;
@@ -85,8 +91,9 @@ export async function applyLocalCatalogueImport(rows: Array<{
   const products = [...overrides.products]
   const promos = [...overrides.promos]
   const multiBuyPromos = [...overrides.multiBuyPromos]
-  let productsCreated = 0, productsUpdated = 0, pricesUpserted = 0, promosCreated = 0, multiBuyPromosCreated = 0
+  let productsCreated = 0, productsUpdated = 0, pricesUpserted = 0, promosCreated = 0, multiBuyPromosCreated = 0, multiBuyPromosUpdated = 0, multiBuyPromosProcessed = 0
   const makeId = () => `local_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 9)}`
+  const inferredCategoryFor = (name: string) => categoryForProductName(name, categories)
   for (const row of rows) {
     const store = stores.find((s) => s.id === row.storeId)
     if (!store) throw new Error(`Unknown store for ${row.name}`)
@@ -100,7 +107,7 @@ export async function applyLocalCatalogueImport(rows: Array<{
       products.push(product)
     }
     if (!product) {
-      const category = categories.find((x) => x.id === row.categoryId) || categories[0]
+      const category = inferredCategoryFor(row.name) || categories.find((x) => x.id === row.categoryId) || categories[0]
       product = {
         id: makeId(), name: row.name, brand: row.brand || null, unit: row.unit || null,
         barcode: row.barcode || null, categoryId: category.id,
@@ -114,10 +121,8 @@ export async function applyLocalCatalogueImport(rows: Array<{
       if (row.unit) product.unit = row.unit
       if (row.barcode) product.barcode = row.barcode
       if (row.brand) product.brand = row.brand
-      if (row.categoryId) {
-        const category = categories.find((x) => x.id === row.categoryId)
-        if (category) { product.categoryId = category.id; product.category = { id: category.id, name: category.name, icon: category.icon || '🛒' } }
-      }
+      const category = inferredCategoryFor(row.name) || (row.categoryId ? categories.find((x) => x.id === row.categoryId) : undefined)
+      if (category) { product.categoryId = category.id; product.category = { id: category.id, name: category.name, icon: category.icon || '🛒' } }
     }
     const singlePrice = row.singleItemPrice ?? row.normalPrice
     if (singlePrice != null) {
@@ -142,6 +147,7 @@ export async function applyLocalCatalogueImport(rows: Array<{
       else { promos.push(promo); if (!existingBase) promosCreated++ }
     }
     if (hasMultiBuy) {
+      multiBuyPromosProcessed++
       const existing = multiBuyPromos.find((p) => p.productId === product.id && p.storeId === store.id && p.startDate?.slice(0, 10) === row.startDate && p.endDate?.slice(0, 10) === row.endDate)
       const offer = {
         id: existing?.id || makeId(), productId: product.id, name: product.name, unit: product.unit,
@@ -152,12 +158,78 @@ export async function applyLocalCatalogueImport(rows: Array<{
         startDate: `${row.startDate}T00:00:00.000Z`, endDate: `${row.endDate}T23:59:59.999Z`,
         createdAt: existing?.createdAt || nowIso(),
       }
-      if (existing) Object.assign(existing, offer)
+      if (existing) { Object.assign(existing, offer); multiBuyPromosUpdated++ }
       else { multiBuyPromos.push(offer); multiBuyPromosCreated++ }
     }
   }
   window.localStorage.setItem(CATALOGUE_OVERRIDE_KEY, JSON.stringify({ products, promos, multiBuyPromos }))
-  return { productsCreated, productsUpdated, pricesUpserted, promosCreated, multiBuyPromosCreated, rowsProcessed: rows.length }
+  const verified = readCatalogueOverrides()
+  const savedMultiBuyIds = new Set(verified.multiBuyPromos.map((offer) => offer.id))
+  const missingMultiBuy = multiBuyPromos.filter((offer) => !savedMultiBuyIds.has(offer.id))
+  if (missingMultiBuy.length) throw new Error(`The browser did not confirm saving ${missingMultiBuy.length} multi-buy offer(s). Your existing catalogue was not cleared; please keep this page open and contact support.`)
+  return { productsCreated, productsUpdated, pricesUpserted, promosCreated, multiBuyPromosCreated, multiBuyPromosUpdated, multiBuyPromosProcessed, multiBuyPromosStored: verified.multiBuyPromos.length, rowsProcessed: rows.length }
+}
+
+
+/** Restore exported catalogue JSON into this browser without copying the entire base catalogue into localStorage. */
+export async function importLocalCatalogueBackup(input: {
+  products?: unknown
+  promos?: unknown
+  multiBuyPromos?: unknown
+}) {
+  if (typeof window === 'undefined') throw new Error('Catalogue restore requires a browser')
+  const readRows = (value: unknown, key: string): AnyRecord[] => {
+    if (!Array.isArray(value)) throw new Error(`The ${key}.json file is missing its expected list.`)
+    if (value.some((row) => !row || typeof row !== 'object' || typeof row.id !== 'string' || !row.id.trim())) {
+      throw new Error(`The ${key}.json file contains a record without a valid ID. Nothing was imported.`)
+    }
+    return value as AnyRecord[]
+  }
+  const incomingProducts = readRows(input.products, 'products')
+  const incomingPromos = readRows(input.promos, 'promos')
+  const incomingMultiBuy = readRows(input.multiBuyPromos, 'multiBuyPromos')
+  const [baseProducts, basePromos, baseMultiBuy, categories] = await Promise.all([
+    jsonFile<{ products: AnyRecord[] }>('/data/products.json'),
+    jsonFile<{ promos: AnyRecord[] }>('/data/promos.json'),
+    jsonFile<{ multiBuyPromos?: AnyRecord[] }>('/data/multi-buy-promos.json').catch(() => ({ multiBuyPromos: [] })),
+    getCategories(),
+  ])
+  const changedOnly = (incoming: AnyRecord[], base: AnyRecord[]) => {
+    const baseline = new Map(base.map((row) => [row.id, JSON.stringify(row)]))
+    return incoming.filter((row) => baseline.get(row.id) !== JSON.stringify(row))
+  }
+  const localProducts = changedOnly(incomingProducts, baseProducts.products)
+  const localPromos = changedOnly(incomingPromos, basePromos.promos)
+  const localMultiBuy = changedOnly(incomingMultiBuy, baseMultiBuy.multiBuyPromos || [])
+  const current = readCatalogueOverrides()
+  const mergeById = (existing: AnyRecord[], incoming: AnyRecord[]) => {
+    const merged = new Map<string, AnyRecord>(existing.map((row) => [row.id, row]))
+    incoming.forEach((row) => merged.set(row.id, row))
+    return [...merged.values()]
+  }
+  const mergedProducts = mergeById(current.products, localProducts)
+    .map((product) => normalizeProductCategory(product, categories))
+  const productById = new Map(mergedProducts.map((product) => [product.id, product]))
+  const normalizeOfferCategory = (offer: AnyRecord) => {
+    const product = productById.get(offer.productId)
+    const category = categoryForProductName(offer.name || product?.name, categories)
+      || (product ? categories.find((entry) => entry.id === product.categoryId) : undefined)
+    return category ? { ...offer, category: { id: category.id, name: category.name, icon: category.icon || '🛒' } } : offer
+  }
+  const next = {
+    products: mergedProducts,
+    promos: mergeById(current.promos, localPromos).map(normalizeOfferCategory),
+    multiBuyPromos: mergeById(current.multiBuyPromos, localMultiBuy).map(normalizeOfferCategory),
+  }
+  window.localStorage.setItem(CATALOGUE_OVERRIDE_KEY, JSON.stringify(next))
+  return {
+    productsImported: localProducts.length,
+    promosImported: localPromos.length,
+    multiBuyOffersImported: localMultiBuy.length,
+    productsStored: next.products.length,
+    promosStored: next.promos.length,
+    multiBuyOffersStored: next.multiBuyPromos.length,
+  }
 }
 
 /** Export a merged snapshot that can be reviewed and committed to public/data. */
@@ -177,15 +249,66 @@ export async function exportLocalCatalogueSnapshot() {
   return { products: [...products.values()], promos: [...promos.values()], multiBuyPromos: [...multiBuyPromos.values()], exportedAt: nowIso() }
 }
 
-const getProducts = async () => {
-  const base = (await jsonFile<{ products: AnyRecord[] }>('/data/products.json')).products
-  const overrides = readCatalogueOverrides().products
-  const merged = new Map<string, AnyRecord>(base.map((p): [string, AnyRecord] => [p.id, p]))
-  overrides.forEach((p) => merged.set(p.id, p))
-  return [...merged.values()]
-}
 const getStores = async () => (await jsonFile<{ stores: AnyRecord[] }>('/data/stores.json')).stores
 const getCategories = async () => (await jsonFile<{ categories: AnyRecord[] }>('/data/categories.json')).categories
+
+// Product-name rules repair stale category snapshots restored from older browser backups.
+// Name-based corrections take precedence over embedded category IDs from those backups.
+const categoryForProductName = (name: unknown, categories: AnyRecord[]) => {
+  const normalized = normalizeProductName(name)
+  const rules: Array<[string, string]> = [
+    ['illovo brown sugar', 'Sugar & Baking'],
+    ['excella sunflower oil', 'Cooking Oil & Staples'],
+    ['ellis brown creamer', 'Eggs & Dairy'],
+    ['tastic long grain parboiled white rice', 'Maize, Rice & Grains'],
+    ['golden ray iqf mixed chicken portions', 'Meat & Chicken'],
+    ["kellogg s corn flakes", 'Breakfast Cereals'],
+    ['large eggs', 'Eggs & Dairy'],
+    ['baby steps disposable nappies', 'Baby Products'],
+    ['surf hand washing powder', 'Cleaning Products'],
+    ['shibobo super maize meal', 'Maize, Rice & Grains'],
+    ['koo baked beans', 'Canned Food'],
+    ['lucky star instant noodles', 'Pasta & Noodles'],
+    ['albany superior sliced brown bread', 'Bread & Bakery'],
+  ]
+  const match = rules.find(([productName]) => normalized.includes(productName))
+  if (!match) return undefined
+  const categoryName = match[1]
+  const categoryIds: Record<string, string> = {
+    'Sugar & Baking': 'sugar-baking',
+    'Canned Food': 'canned-food',
+    'Pasta & Noodles': 'pasta-noodles',
+  }
+  const fallbackIcons: Record<string, string> = {
+    'Sugar & Baking': '🧁',
+    'Canned Food': '🥫',
+    'Pasta & Noodles': '🍝',
+  }
+  return categories.find((category) => category.name === categoryName) || (
+    categoryIds[categoryName]
+      ? { id: categoryIds[categoryName], name: categoryName, icon: fallbackIcons[categoryName] }
+      : undefined
+  )
+}
+const normalizeProductCategory = (product: AnyRecord, categories: AnyRecord[]) => {
+  const category = categoryForProductName(product.name, categories)
+    || categories.find((entry) => entry.id === (product.categoryId || product.category?.id))
+  return category ? {
+    ...product,
+    categoryId: category.id,
+    category: { id: category.id, name: category.name, icon: category.icon || '🛒' },
+  } : product
+}
+const getProducts = async () => {
+  const [base, categories] = await Promise.all([
+    jsonFile<{ products: AnyRecord[] }>('/data/products.json'),
+    getCategories(),
+  ])
+  const overrides = readCatalogueOverrides().products
+  const merged = new Map<string, AnyRecord>(base.products.map((p): [string, AnyRecord] => [p.id, p]))
+  overrides.forEach((p) => merged.set(p.id, p))
+  return [...merged.values()].map((product) => normalizeProductCategory(product, categories))
+}
 const getPromos = async (ctx?: StaticContext) => {
   if (ctx?.mergedPromos) return ctx.mergedPromos()
   const base = (await jsonFile<{ promos: AnyRecord[] }>('/data/promos.json')).promos
@@ -194,19 +317,40 @@ const getPromos = async (ctx?: StaticContext) => {
   overrides.forEach((p) => merged.set(p.id, p))
   return [...merged.values()]
 }
+const getMultiBuyPromos = async () => {
+  const base = await jsonFile<{ multiBuyPromos?: AnyRecord[] }>('/data/multi-buy-promos.json').catch(() => ({ multiBuyPromos: [] }))
+  const merged = new Map<string, AnyRecord>((base.multiBuyPromos || []).map((p): [string, AnyRecord] => [p.id, p]))
+  readCatalogueOverrides().multiBuyPromos.forEach((p) => merged.set(p.id, p))
+  return [...merged.values()]
+}
+const normalizeProductName = (value: unknown) => String(value || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim().replace(/\s+/g, ' ')
+const findCatalogueProduct = (name: unknown, products: AnyRecord[]) => {
+  const normalized = normalizeProductName(name)
+  return normalized ? products.find((product) => normalizeProductName(product.name) === normalized) : undefined
+}
 const fail = (message: string): never => { throw new Error(message) }
 const requireList = (state: AnyRecord, listId: string) => {
   const list = state.lists.find((entry: AnyRecord) => entry.id === listId)
   if (!list) return fail('List not found')
   return list
 }
-const enrichItem = (item: AnyRecord, products: AnyRecord[], stores: AnyRecord[], promos: AnyRecord[]) => {
+const enrichItem = (item: AnyRecord, products: AnyRecord[], stores: AnyRecord[], promos: AnyRecord[], multiBuyPromos: AnyRecord[] = []) => {
   const product = products.find((p) => p.id === item.productId)
   const prices = product?.storePrices || {}
   const priceEntries = Object.entries(prices) as [string, number][]
   const lowest = priceEntries.sort((a, b) => a[1] - b[1])[0]
-  const active = promos.filter((p) => p.productId === item.productId && new Date(p.startDate) <= new Date() && new Date(p.endDate) >= new Date())
+  const now = new Date()
+  const active = promos.filter((p) => p.productId === item.productId && new Date(p.startDate) <= now && new Date(p.endDate) >= now)
     .sort((a, b) => a.promoPrice - b.promoPrice)[0]
+  // Imported flyer offers can retain a product name while an older list item
+  // points at a different catalogue ID. Match by normalized name as a safe
+  // fallback so the offer is not lost when the IDs do not line up.
+  const productNameKey = normalizeProductName(product?.name || item.manualName)
+  const multiBuy = multiBuyPromos.filter((p) =>
+    (p.productId === item.productId || (productNameKey && normalizeProductName(p.name) === productNameKey)) &&
+    new Date(p.startDate) <= now && new Date(p.endDate) >= now &&
+    Number(p.quantity) > 0 && Number(p.bundlePrice) > 0
+  ).sort((a, b) => Number(a.bundlePrice) / Number(a.quantity) - Number(b.bundlePrice) / Number(b.quantity))[0]
   const manualStore = stores.find((s) => s.id === item.manualStoreId)
   return {
     ...item,
@@ -223,24 +367,56 @@ const enrichItem = (item: AnyRecord, products: AnyRecord[], stores: AnyRecord[],
       storeName: active.storeName, storeColor: active.storeColor, storeId: active.storeId,
       endDate: active.endDate,
     } : null,
-    notOnPromo: Boolean(item.productId) && !active,
+    multiBuyOffer: !active && multiBuy ? {
+      quantity: Number(multiBuy.quantity), bundlePrice: Number(multiBuy.bundlePrice),
+      unitPrice: Number(multiBuy.bundlePrice) / Number(multiBuy.quantity),
+      storeName: multiBuy.storeName, storeColor: multiBuy.storeColor, storeId: multiBuy.storeId,
+      endDate: multiBuy.endDate,
+    } : null,
+    notOnPromo: Boolean(item.productId) && !active && !multiBuy,
   }
 }
 async function compareList(state: AnyRecord, listId: string, storeIds: string[], preferred: string | null, ctx?: StaticContext) {
   const list = requireList(state, listId)
-  const [products, stores, promos] = await Promise.all([getProducts(), getStores(), getPromos(ctx)])
+  const [products, stores, promos, multiBuyPromos] = await Promise.all([getProducts(), getStores(), getPromos(ctx), getMultiBuyPromos()])
   // Empty selection means all retailers; ignore stale IDs and include every known store.
   const selected = storeIds.length ? stores.filter((s) => storeIds.includes(s.id)) : stores
   if (!selected.length) fail('No retailers are available to compare')
   const items = state.items.filter((i: AnyRecord) => i.listId === listId)
   const effective = (productId: string, storeId: string) => {
     const product = products.find((p) => p.id === productId)
-    const normal = product?.storePrices?.[storeId]
+    const productNameKey = normalizeProductName(product?.name)
+    const now = new Date()
+    // A list line represents the imported pack (for example, 3 x 700g).
+    // Compare every retailer against that same pack size, not one loose unit
+    // at a retailer that has no multi-buy offer.
+    const activeOffers = multiBuyPromos.filter((p) =>
+      (p.productId === productId || (productNameKey && normalizeProductName(p.name) === productNameKey)) &&
+      new Date(p.startDate) <= now && new Date(p.endDate) >= now &&
+      Number(p.quantity) > 0 && Number(p.bundlePrice) > 0
+    )
+    const referenceOffer = activeOffers[0]
+    const bundleQuantity = referenceOffer ? Number(referenceOffer.quantity) : 1
+    const normalUnitPrice = product?.storePrices?.[storeId]
+    const multiBuy = activeOffers.filter((p) => p.storeId === storeId)
+      .sort((a, b) => Number(a.bundlePrice) / Number(a.quantity) - Number(b.bundlePrice) / Number(b.quantity))[0]
+    if (multiBuy) {
+      const bundlePrice = Number(multiBuy.bundlePrice)
+      const singlePrice = multiBuy.singleItemPrice == null ? normalUnitPrice : Number(multiBuy.singleItemPrice)
+      const normalBundlePrice = singlePrice == null ? bundlePrice : Number(singlePrice) * Number(multiBuy.quantity)
+      return { price: bundlePrice, normal: normalBundlePrice, promoPrice: bundlePrice }
+    }
     const promo = promos.filter((p) => p.productId === productId && p.storeId === storeId &&
-      new Date(p.startDate) <= new Date() && new Date(p.endDate) >= new Date())
+      new Date(p.startDate) <= now && new Date(p.endDate) >= now)
       .sort((a, b) => a.promoPrice - b.promoPrice)[0]
-    if (promo) return { price: promo.promoPrice, normal: number(normal, promo.normalPrice), promoPrice: promo.promoPrice }
-    return normal == null ? null : { price: number(normal), normal: number(normal), promoPrice: null as number | null }
+    if (promo) {
+      const unitPrice = Number(promo.promoPrice)
+      const normal = number(normalUnitPrice, promo.normalPrice)
+      return { price: unitPrice * bundleQuantity, normal: normal * bundleQuantity, promoPrice: unitPrice * bundleQuantity }
+    }
+    return normalUnitPrice == null
+      ? null
+      : { price: number(normalUnitPrice) * bundleQuantity, normal: number(normalUnitPrice) * bundleQuantity, promoPrice: null as number | null }
   }
   const storeResults = selected.map((store) => {
     let total = 0, savings = 0, fullTotal = 0, available = 0, notOnPromo = 0, onPromo = 0
@@ -313,12 +489,21 @@ async function compareList(state: AnyRecord, listId: string, storeIds: string[],
         assignments[index].push({ itemId: item.id, name: product?.name || item.manualName || 'Item', quantity: qty, unit: product?.unit ?? null, price: round(price), storeId: store!.id, storeName: store!.name, storeColor: store!.color })
         costs[index] += price
       }
-      const splitTotal = round(costs[0] + costs[1]), single = cheapest?.total ?? splitTotal
+      const splitTotal = round(costs[0] + costs[1])
+      // Use the cheapest complete basket as the baseline even when only one
+      // retailer can stock the full list. Partial-store subtotals are not a
+      // valid single-store comparison.
+      const completeBasket = ranked[0] || null
+      const single = completeBasket?.total ?? splitTotal
       const saving = round(single - splitTotal)
-      split = {
-        store1: { storeId: best.a.id, name: best.a.name, color: best.a.color, items: assignments[0], cost: round(costs[0]) },
-        store2: { storeId: best.b.id, name: best.b.name, color: best.b.color, items: assignments[1], cost: round(costs[1]) },
-        splitTotal, cheapestSingleTotal: single, saving, worthIt: saving > 0, travelWarning: saving > 0 && saving < 30,
+      // Do not present a two-store plan when every item is cheaper at one store.
+      if (assignments[0].length > 0 && assignments[1].length > 0) {
+        split = {
+          store1: { storeId: best.a.id, name: best.a.name, color: best.a.color, items: assignments[0], cost: round(costs[0]) },
+          store2: { storeId: best.b.id, name: best.b.name, color: best.b.color, items: assignments[1], cost: round(costs[1]) },
+          splitTotal, cheapestSingleTotal: single, cheapestSingleStoreName: completeBasket?.name ?? null,
+          saving, worthIt: saving > 0, travelWarning: saving > 0 && saving < 30,
+        }
       }
     }
   }
@@ -499,10 +684,52 @@ export async function handleStaticApi(method: string, path: string, body: AnyRec
   if (verb === 'GET' && pathname === '/api/categories') return { categories: await getCategories() }
   if (verb === 'GET' && pathname === '/api/whats-new') { const base = await jsonFile<{ posts: AnyRecord[] }>('/data/whats-new.json'); const local = readLocalWhatsNew().filter(post => post.active !== false); return { posts: [...local, ...(base.posts || [])] } }
   if (verb === 'GET' && pathname === '/api/promos') {
-    const promos = (await getPromos(ctx)).filter((p) => new Date(p.startDate) <= new Date() && new Date(p.endDate) >= new Date())
+    const [basePromos, baseMultiBuy, products, categories] = await Promise.all([
+      getPromos(ctx),
+      jsonFile<{ multiBuyPromos?: AnyRecord[] }>('/data/multi-buy-promos.json').catch(() => ({ multiBuyPromos: [] })),
+      getProducts(),
+      getCategories(),
+    ])
+    // Promotion snapshots can retain an older embedded category. Resolve the
+    // displayed category from the current product catalogue, with an explicit
+    // correction for the Boxer flyer sugar product.
+    const categoryForPromotion = (productId: string, name: string, fallback: AnyRecord) => {
+      const product = products.find((entry) => entry.id === productId)
+      const category = categoryForProductName(name || product?.name, categories)
+        || (product ? categories.find((entry) => entry.id === product.categoryId) : undefined)
+      if (category) return { id: category.id, name: category.name, icon: category.icon || '🛒' }
+      return product?.category || fallback
+    }
+    const overrides = readCatalogueOverrides()
+    const multiBuyById = new Map<string, AnyRecord>((baseMultiBuy.multiBuyPromos || []).map((p): [string, AnyRecord] => [p.id, p]))
+    overrides.multiBuyPromos.forEach((p) => multiBuyById.set(p.id, p))
+    const now = new Date()
+    const activePromos = basePromos
+      .filter((p) => new Date(p.startDate) <= now && new Date(p.endDate) >= now)
+      .map((p) => ({ ...p, category: categoryForPromotion(p.productId, p.name, p.category) }))
+    const activeMultiBuy = [...multiBuyById.values()]
+      .filter((p) => new Date(p.startDate) <= now && new Date(p.endDate) >= now)
+      .map((p) => {
+        const quantity = Number(p.quantity) || 0
+        const bundlePrice = Number(p.bundlePrice) || 0
+        const singleItemPrice = p.singleItemPrice == null ? null : Number(p.singleItemPrice)
+        const normalBundlePrice = singleItemPrice != null ? singleItemPrice * quantity : null
+        return {
+          id: p.id, productId: p.productId, name: p.name, unit: p.unit,
+          category: categoryForPromotion(p.productId, p.name, p.category || { id: 'other', name: 'Other', icon: '🛒' }),
+          storeId: p.storeId, storeName: p.storeName, storeColor: p.storeColor,
+          promoPrice: quantity > 0 ? bundlePrice / quantity : bundlePrice,
+          normalPrice: singleItemPrice,
+          discount: normalBundlePrice != null && normalBundlePrice > 0 ? Math.max(0, Math.round((1 - bundlePrice / normalBundlePrice) * 100)) : 0,
+          saved: normalBundlePrice != null ? Math.max(0, Math.round((normalBundlePrice - bundlePrice) * 100) / 100) : 0,
+          endDate: p.endDate, createdAt: p.createdAt,
+          multiBuyQuantity: quantity, bundlePrice, unitPrice: quantity > 0 ? bundlePrice / quantity : bundlePrice,
+          singleItemPrice, offerText: p.offerText || null,
+        }
+      })
     const store = query.get('store'), category = query.get('category'), sort = query.get('sort') || 'discount'
-    let rows = promos.filter((p) => (!store || p.storeId === store) && (!category || p.category?.id === category))
-    rows = [...rows].sort(sort === 'price' ? (a, b) => a.promoPrice - b.promoPrice : sort === 'ending' ? (a, b) => +new Date(a.endDate) - +new Date(b.endDate) : sort === 'new' ? (a, b) => +new Date(b.createdAt) - +new Date(a.createdAt) : (a, b) => b.discount - a.discount || a.promoPrice - b.promoPrice)
+    let rows = [...activePromos, ...activeMultiBuy].filter((p) => (!store || p.storeId === store) && (!category || p.category?.id === category))
+    rows = rows.sort(sort === 'price' ? (a, b) => a.promoPrice - b.promoPrice : sort === 'ending' ? (a, b) => +new Date(a.endDate) - +new Date(b.endDate) : sort === 'new' ? (a, b) => +new Date(b.createdAt) - +new Date(a.createdAt) : (a, b) => b.discount - a.discount || a.promoPrice - b.promoPrice)
     return { promos: rows }
   }
   if (verb === 'GET' && pathname === '/api/auth/session') return { user: null }
@@ -550,8 +777,23 @@ export async function handleStaticApi(method: string, path: string, body: AnyRec
     if (!action) {
       if (verb === 'GET') {
         const list = requireList(state, listId)
-        const [products, stores, promos] = await Promise.all([getProducts(), getStores(), getPromos(ctx)])
-        const items = state.items.filter((i: AnyRecord) => i.listId === listId).map((i: AnyRecord) => enrichItem(i, products, stores, promos))
+        const [products, stores, promos, multiBuyPromos] = await Promise.all([getProducts(), getStores(), getPromos(ctx), getMultiBuyPromos()])
+        let linkedExistingManualItems = false
+        const listItems = state.items.filter((i: AnyRecord) => i.listId === listId)
+        for (const item of listItems) {
+          if (!item.productId && item.manualPrice == null && item.manualName) {
+            const match = findCatalogueProduct(item.manualName, products)
+            if (match) {
+              item.productId = match.id
+              item.manualName = null
+              item.manualUnit = null
+              item.manualStoreId = null
+              linkedExistingManualItems = true
+            }
+          }
+        }
+        if (linkedExistingManualItems) save()
+        const items = listItems.map((i: AnyRecord) => enrichItem(i, products, stores, promos, multiBuyPromos))
         return { list, items, plans: state.plans.filter((p: AnyRecord) => p.listId === listId).sort((a: AnyRecord, b: AnyRecord) => String(b.createdAt).localeCompare(String(a.createdAt))).slice(0, 5) }
       }
       if (verb === 'PATCH') {
@@ -586,7 +828,10 @@ export async function handleStaticApi(method: string, path: string, body: AnyRec
           const name = String(body?.name || '').trim(), price = body?.price == null ? null : Number(body.price)
           if (!name) fail('Enter the product name')
           if (price != null && (!Number.isFinite(price) || price < 0)) fail('Enter a valid shelf price')
-          item = { id: id(), listId, productId: null, manualName: name.slice(0, 80), manualUnit: body.unit == null ? null : String(body.unit).trim().slice(0, 40) || null, manualPrice: price, manualStoreId: body.storeId || null, quantity, source: body.source ?? 'manual', note: null, createdAt: nowIso() }
+          const matchedProduct = price == null ? findCatalogueProduct(name, await getProducts()) : undefined
+          item = matchedProduct
+            ? { id: id(), listId, productId: matchedProduct.id, manualName: null, manualPrice: null, manualStoreId: null, quantity, source: 'catalogue-match', note: null, createdAt: nowIso() }
+            : { id: id(), listId, productId: null, manualName: name.slice(0, 80), manualUnit: body.unit == null ? null : String(body.unit).trim().slice(0, 40) || null, manualPrice: price, manualStoreId: body.storeId || null, quantity, source: body.source ?? 'manual', note: null, createdAt: nowIso() }
         }
         state.items.push(item); save(); return { item }
       }

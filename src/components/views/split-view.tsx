@@ -82,15 +82,15 @@ export function SplitView() {
     return (
       <div className="px-4 pt-10 max-w-xl mx-auto text-center text-zinc-400">
         <p className="text-4xl mb-3">🤔</p>
-        <p className="text-sm">We couldn&apos;t build a split plan for this list.</p>
-        <p className="text-xs mt-1">Make sure your items are available at more than one store.</p>
+        <p className="text-sm">A two-store split does not improve this basket.</p>
+        <p className="text-xs mt-1">One store already has the best comparable price for every item, so one trip is the better option.</p>
         <Button onClick={() => go('compare')} className="mt-4 bg-blue-600 hover:bg-blue-700">Back to comparison</Button>
       </div>
     )
   }
 
   const { store1, store2 } = split
-  const cheapestStore = result?.cheapest
+  const cheapestStore = result?.cheapest ?? result?.stores.find((store) => store.missing === 0) ?? null
 
   return (
     <div className="px-4 pt-4 max-w-xl mx-auto pb-4">
@@ -111,7 +111,7 @@ export function SplitView() {
               Cheapest single store
             </p>
             <p className="text-2xl font-extrabold text-lime-700 mt-1">{formatZAR(split.cheapestSingleTotal)}</p>
-            <p className="text-[10px] text-zinc-400">{cheapestStore?.name}</p>
+            <p className="text-[10px] text-zinc-400">{split.cheapestSingleStoreName || cheapestStore?.name || 'Complete basket'}</p>
           </div>
         </div>
         <div className="mt-3 pt-3 border-t border-lime-300/60 text-center">

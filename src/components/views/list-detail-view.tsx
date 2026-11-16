@@ -22,6 +22,7 @@ type ListItemT = {
   lowestStoreName: string | null
   promo: { promoPrice: number; normalPrice: number; storeName: string; storeColor: string } | null
   notOnPromo: boolean
+  multiBuyOffer: { quantity: number; bundlePrice: number; unitPrice: number; storeName: string; storeColor: string } | null
 }
 
 export function ListDetailView() {
@@ -74,7 +75,7 @@ export function ListDetailView() {
   }
 
   const totalUnits = items.reduce((a, i) => a + i.quantity, 0)
-  const promoCount = items.filter((i) => i.promo).length
+  const promoCount = items.filter((i) => i.promo || i.multiBuyOffer).length
 
   return (
     <div className="px-4 pt-4 max-w-xl mx-auto pb-4">
@@ -121,6 +122,10 @@ export function ListDetailView() {
                     style={{ background: item.promo.storeColor }}
                   >
                     {discountPct(item.promo.promoPrice, item.promo.normalPrice)}% off at {item.promo.storeName}
+                  </span>
+                ) : item.multiBuyOffer ? (
+                  <span className="text-[9px] text-white rounded px-1.5 py-0.5 font-bold" style={{ background: item.multiBuyOffer.storeColor }}>
+                    {item.multiBuyOffer.quantity} for {formatZAR(item.multiBuyOffer.bundlePrice)} at {item.multiBuyOffer.storeName} ({formatZAR(item.multiBuyOffer.unitPrice)} each)
                   </span>
                 ) : item.notOnPromo ? (
                   <span className="text-[9px] italic text-zinc-400">Not on promotion.</span>
