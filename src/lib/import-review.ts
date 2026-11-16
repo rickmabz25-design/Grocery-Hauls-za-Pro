@@ -66,7 +66,7 @@ export function parsePrice(value: unknown): number | null {
   return Number.isFinite(parsed) && parsed >= 0 ? Math.round(parsed * 100) / 100 : null
 }
 
-export function parseDate(value: unknown): string | null {
+export function parseDate(value: unknown, dateOrder: 'day-first' | 'month-first' = 'day-first'): string | null {
   if (value instanceof Date && Number.isFinite(value.getTime())) {
     return value.toISOString().slice(0, 10)
   }
@@ -95,13 +95,16 @@ export function parseDate(value: unknown): string | null {
       return Number.isFinite(date.getTime()) ? date.toISOString().slice(0, 10) : null
     }
   }
-  // South African CSV exports commonly use D/M/YY (for example, 11/9/26
-  // means 11 September 2026). Keep day-first ordering and expand two-digit years.
+  // Slash/dash dates can be day-first (D/M/YYYY) or month-first (M/D/YYYY).
+  // Keep the existing South African day-first default, but let a whole import
+  // select month-first when its rows provide an unambiguous clue (e.g. 11/22/2026).
   const local = raw.match(/^(\d{1,2})[/.-](\d{1,2})[/.-](\d{2}|\d{4})$/)
   if (local) {
-    const day = Number(local[1]), month = Number(local[2])
+    const first = Number(local[1]), second = Number(local[2])
     const yearPart = Number(local[3])
     const year = local[3].length === 2 ? (yearPart <= 69 ? 2000 + yearPart : 1900 + yearPart) : yearPart
+    const month = dateOrder === 'month-first' ? first : second
+    const day = dateOrder === 'month-first' ? second : first
     const date = new Date(Date.UTC(year, month - 1, day))
     if (date.getUTCFullYear() !== year || date.getUTCMonth() !== month - 1 || date.getUTCDate() !== day) return null
     return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`
@@ -207,6 +210,19 @@ export function buildReviewRows(
   context: ImportReviewContext = {},
 ): ImportReviewRow[] {
   const seen = new Set<string>()
+  // Infer the date order once for the entire file using unambiguous dates.
+  // If any date has a second component > 12, the file is month-first;
+  // if any first component > 12, it is day-first. Ambiguous-only files retain
+  // the South African day-first default rather than silently changing meaning.
+  const dateValues = records.flatMap((raw) => [
+    mapping.startDate ? raw[mapping.startDate] : null,
+    mapping.endDate ? raw[mapping.endDate] : null,
+  ]).map(text)
+  const dateParts = dateValues.map((value) => value.match(/^(\\d{1,2})[/.-](\\d{1,2})[/.-](?:\\d{2}|\\d{4})$/)).filter(Boolean)
+  const dateOrder: 'day-first' | 'month-first' =
+    dateParts.some((match) => Number(match![2]) > 12 && Number(match![1]) <= 12)
+      ? 'month-first'
+      : 'day-first'
   return records.map((raw, index) => {
     const name = text(mapping.name ? raw[mapping.name] : '')
     const storeName = text(mapping.store ? raw[mapping.store] : '') || text(context.defaultStoreName)
@@ -219,8 +235,8 @@ export function buildReviewRows(
     const singleItemPrice = parseSingleItemPrice(notes)
     const explicitPromoPrice = parsePrice(mapping.promoPrice ? raw[mapping.promoPrice] : null)
     const promoPrice = explicitPromoPrice ?? (multiBuyOffer ? null : (promoOffer ? parsePrice(promoOffer) : null))
-    const startDate = parseDate(mapping.startDate ? raw[mapping.startDate] : null) || context.defaultStart || null
-    const endDate = parseDate(mapping.endDate ? raw[mapping.endDate] : null) || context.defaultEnd || null
+    const startDate = parseDate(mapping.startDate ? raw[mapping.startDate] : null, dateOrder) || context.defaultStart || null
+    const endDate = parseDate(mapping.endDate ? raw[mapping.endDate] : null, dateOrder) || context.defaultEnd || null
     const issues: ImportIssue[] = []
     const add = (code: string, message: string, severity: 'error' | 'warning' = 'error') => issues.push({ code, message, severity })
 
