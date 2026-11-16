@@ -132,17 +132,31 @@ export function autoMap(headers: string[]): ImportColumnMap {
   const normalized = headers.map((h) => ({ original: h, key: h.toLowerCase().replace(/[^a-z0-9]/g, '') }))
   const pick = (patterns: RegExp[]): string | undefined =>
     normalized.find(({ key }) => patterns.some((p) => p.test(key)))?.original
+  // Retailer CSVs use many variations of the same headings. Match the
+  // common exact forms first, then use conservative token-based fallbacks.
+  const pickFallback = (test: (key: string) => boolean, exclude: (key: string) => boolean = () => false) =>
+    normalized.find(({ key }) => test(key) && !exclude(key))?.original
+
+  const name = pick([/^product(name|description)?$/, /^item(name|description)?$/, /^description$/, /^name$/]) ||
+    pickFallback(key => /product|item|description|stockitem/.test(key) && !/category|brand|barcode/.test(key))
+  const store = pick([/^store(name)?$/, /^retailer$/, /^merchant$/]) ||
+    pickFallback(key => /store|retailer|merchant/.test(key))
+  const startDate = pick([/^start(date)?$/, /^(?:promo|promotion|offer|flyer)start(date)?$/, /^valid(from|fromdate)?$/, /^validity(start|from)$/, /^from(date)?$/, /^datefrom$/, /^offerstart(date)?$/]) ||
+    pickFallback(key => /(start|from|validfrom|validitystart)/.test(key) && /date|valid|start|from/.test(key), key => /end|until|expiry|expire|to$/.test(key))
+  const endDate = pick([/^end(date)?$/, /^(?:promo|promotion|offer|flyer)end(date)?$/, /^valid(until|untildate|to|todate)?$/, /^validity(end|until|to)$/, /^to(date)?$/, /^dateto$/, /^expiry(date)?$/, /^offerend(date)?$/, /^expires?(on|date)?$/]) ||
+    pickFallback(key => /(end|until|validto|validuntil|expiry|expires|expiration|validityend)/.test(key) && /date|valid|end|until|expiry|expire|to/.test(key), key => /start|from/.test(key))
 
   return {
-    name: pick([/^product(name|description)?$/, /^item(name|description)?$/, /^description$/, /^name$/]),
-    store: pick([/^store(name)?$/, /^retailer$/, /^merchant$/]),
-    unit: pick([/^unit$/, /^size$/, /^pack(age)?$/, /^weight$/, /^volume$/, /^description$/]),
-    normalPrice: pick([/^normal(price)?$/, /^regular(price)?$/, /^was(price)?$/, /^old(price)?$/, /^rrp$/]),
-    promoPrice: pick([/^promo(price)?$/, /^special(price)?$/, /^selling(price)?$/, /^now(price)?$/, /^deal(price)?$/]),
-    promoOffer: pick([/^(?:price)?offer$/, /^promotionoffer$/, /^dealdescription$/, /^offertext$/, /^specialoffer$/]),
-    notes: pick([/^notes?$/, /^remarks?$/, /^additionalinfo$/]),
-    startDate: pick([/^start(date)?$/, /^(?:promo|promotion)start(date)?$/, /^valid(from|fromdate)?$/, /^from(date)?$/, /^datefrom$/, /^offerstart(date)?$/]),
-    endDate: pick([/^end(date)?$/, /^(?:promo|promotion)end(date)?$/, /^valid(until|untildate|to|todate)?$/, /^to(date)?$/, /^dateto$/, /^expiry(date)?$/, /^offerend(date)?$/]),
+    name,
+    store,
+    unit: pick([/^unit$/, /^size$/, /^pack(age)?$/, /^weight$/, /^volume$/]) || pickFallback(key => /size|packsize|packaging|weight|volume/.test(key)),
+    normalPrice: pick([/^normal(price)?$/, /^regular(price)?$/, /^was(price)?$/, /^old(price)?$/, /^rrp$/, /^shelfprice$/]) || pickFallback(key => /(normal|regular|shelf|was|old|rrp).*price|price.*(normal|regular|shelf|was|old|rrp)/.test(key)),
+    promoPrice: pick([/^promo(price)?$/, /^special(price)?$/, /^selling(price)?$/, /^now(price)?$/, /^deal(price)?$/, /^promotionprice$/]) || pickFallback(key => /(promo|special|selling|current|deal|offer).*price|price.*(promo|special|selling|current|deal|offer)/.test(key), key => /normal|regular|was|old|rrp/.test(key)),
+    promoOffer: pick([/^(?:price)?offer$/, /^promotionoffer$/, /^dealdescription$/, /^offertext$/, /^specialoffer$/, /^multibuyoffer$/]) ||
+      pickFallback(key => /(offer|multibuy|dealdescription|promotiondetails|specialdetails)/.test(key), key => /price$/.test(key)),
+    notes: pick([/^notes?$/, /^remarks?$/, /^additionalinfo$/, /^flyerdetails$/, /^comments?$/]) || pickFallback(key => /notes|remarks|additionalinfo|flyerdetails|comments/.test(key)),
+    startDate,
+    endDate,
   }
 }
 
