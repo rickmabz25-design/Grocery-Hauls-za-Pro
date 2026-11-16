@@ -1,6 +1,6 @@
 'use client'
 
-// Preview rebuild trigger: comment only; no application behaviour changes.
+// Preview rebuild trigger: verify current public/data/stores.json is deployed with the importer.
 
 import { useEffect, useState } from 'react'
 import * as XLSX from 'xlsx'
