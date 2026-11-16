@@ -447,6 +447,40 @@ async function compareList(state: AnyRecord, listId: string, storeIds: string[],
   const mostExpensive = ranked.length > 1 ? ranked[ranked.length - 1] : null
   storeResults.forEach((s) => { s.cheapest = s.storeId === cheapest?.storeId; s.mostExpensive = s.storeId === mostExpensive?.storeId })
 
+  // Explain partial coverage when no two retailers can supply the full basket.
+  let splitMessage: string | null = null
+  if (selected.length >= 2 && items.length) {
+    let bestCoverage: { a: AnyRecord; b: AnyRecord; covered: number; total: number; missingNames: string[] } | null = null
+    for (let i = 0; i < selected.length; i++) for (let j = i + 1; j < selected.length; j++) {
+      const a = selected[i], b = selected[j]
+      let covered = 0, total = 0
+      const missingNames: string[] = []
+      for (const item of items) {
+        const qty = Math.max(1, number(item.quantity, 1))
+        if (item.productId) {
+          const pa = effective(item.productId, a.id), pb = effective(item.productId, b.id)
+          if (!pa && !pb) {
+            missingNames.push(products.find((p) => p.id === item.productId)?.name || 'Product')
+            continue
+          }
+          covered++
+          total += Math.min(pa ? pa.price * qty : Infinity, pb ? pb.price * qty : Infinity)
+        } else if (item.manualPrice != null && (item.manualStoreId === a.id || item.manualStoreId === b.id)) {
+          covered++
+          total += number(item.manualPrice) * qty
+        } else {
+          missingNames.push(item.manualName || 'Manual item')
+        }
+      }
+      if (!bestCoverage || covered > bestCoverage.covered || (covered === bestCoverage.covered && total < bestCoverage.total)) {
+        bestCoverage = { a, b, covered, total, missingNames }
+      }
+    }
+    if (bestCoverage && bestCoverage.covered < items.length) {
+      splitMessage = `No two-store combination can cover the full basket. The best pair, ${bestCoverage.a.name} and ${bestCoverage.b.name}, covers ${bestCoverage.covered} of ${items.length} products; ${items.length - bestCoverage.covered} are unavailable at both stores. A full-basket saving cannot be calculated.`
+    }
+  }
+
   let split: AnyRecord | null = null
   if (selected.length >= 2 && items.length) {
     let best: { a: AnyRecord; b: AnyRecord; total: number } | null = null
@@ -512,7 +546,7 @@ async function compareList(state: AnyRecord, listId: string, storeIds: string[],
     cheapest: cheapest ? { storeId: cheapest.storeId, name: cheapest.name, total: cheapest.total, savings: cheapest.savings } : null,
     mostExpensive: mostExpensive ? { storeId: mostExpensive.storeId, name: mostExpensive.name, total: mostExpensive.total } : null,
     overallCheaperBy: cheapest && mostExpensive ? round(mostExpensive.total - cheapest.total) : 0,
-    split, itemCount: items.length,
+    split, splitMessage, itemCount: items.length,
   }
 }
 
