@@ -24,6 +24,7 @@ export const CATEGORIES = [
   { name: 'Toiletries', icon: '🧴', sortOrder: 10 },
   { name: 'Baby Products', icon: '🍼', sortOrder: 11 },
   { name: 'Pet Food', icon: '🐾', sortOrder: 12 },
+  { name: 'Spices & Seasonings', icon: '🌶️', sortOrder: 17 },
 ]
 
 export type SeedProduct = {
