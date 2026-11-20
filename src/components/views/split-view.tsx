@@ -83,7 +83,7 @@ export function SplitView() {
       <div className="px-4 pt-10 max-w-xl mx-auto text-center text-zinc-400">
         <p className="text-4xl mb-3">🤔</p>
         <p className="text-sm">A two-store split does not improve this basket.</p>
-        <p className="text-xs mt-1">One store already has the best comparable price for every item, so one trip is the better option.</p>
+        <p className="text-xs mt-1">{result?.splitMessage || "The available prices do not show a worthwhile two-store split for this basket."}</p>
         <Button onClick={() => go('compare')} className="mt-4 bg-blue-600 hover:bg-blue-700">Back to comparison</Button>
       </div>
     )

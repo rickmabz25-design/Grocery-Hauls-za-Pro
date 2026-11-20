@@ -60,6 +60,7 @@ export type CompareResult = {
   mostExpensive: { storeId: string; name: string; total: number } | null
   overallCheaperBy: number
   split: SplitResult | null
+  splitMessage?: string | null
   itemCount: number
 }
 
@@ -189,50 +190,58 @@ export async function computeComparison(
   const overallCheaperBy =
     cheapest && mostExpensive ? Math.round((mostExpensive.total - cheapest.total) * 100) / 100 : 0
 
-  // ---------- Split-shopping analysis (best pair of stores) ----------
+  // ---------- Split-shopping analysis (compare like-for-like coverage) ----------
   let split: SplitResult | null = null
+  let splitMessage: string | null = null
   if (stores.length >= 2 && items.length > 0) {
-    let bestPair: { a: (typeof stores)[0]; b: (typeof stores)[0]; total: number } | null = null
+    let bestPair: {
+      a: (typeof stores)[0]; b: (typeof stores)[0]; total: number
+      covered: number; missingNames: string[]
+    } | null = null
+
     for (let i = 0; i < stores.length; i++) {
       for (let j = i + 1; j < stores.length; j++) {
-        const a = stores[i]
-        const b = stores[j]
-        let pairTotal = 0
+        const a = stores[i], b = stores[j]
+        let pairTotal = 0, covered = 0
+        const missingNames: string[] = []
         for (const item of items) {
           const qty = item.quantity || 1
           if (item.productId) {
             const ea = effective(item.productId, a.id)
             const eb = effective(item.productId, b.id)
             if (!ea && !eb) {
-              pairTotal += 0 // unbuyable at both — excluded
+              missingNames.push(item.product?.name || 'Product')
               continue
             }
+            covered++
             pairTotal += Math.min(ea ? ea.price * qty : Infinity, eb ? eb.price * qty : Infinity)
+          } else if (item.manualStoreId === a.id || item.manualStoreId === b.id) {
+            covered++
+            pairTotal += (item.manualPrice ?? 0) * qty
           } else {
-            if (item.manualStoreId === a.id || item.manualStoreId === b.id) {
-              pairTotal += (item.manualPrice ?? 0) * qty
-            }
+            missingNames.push(item.manualName || 'Manual item')
           }
         }
-        if (!bestPair || pairTotal < bestPair.total) bestPair = { a, b, total: pairTotal }
+        if (!bestPair || covered > bestPair.covered ||
+          (covered === bestPair.covered && pairTotal < bestPair.total)) {
+          bestPair = { a, b, total: pairTotal, covered, missingNames }
+        }
       }
     }
 
-    if (bestPair) {
+    if (bestPair && bestPair.covered < items.length) {
+      splitMessage = `No two-store combination can cover the full basket. The best pair, ${bestPair.a.name} and ${bestPair.b.name}, covers ${bestPair.covered} of ${items.length} products; ${items.length - bestPair.covered} are unavailable at both stores. A full-basket saving cannot be calculated.`
+    } else if (bestPair) {
       const { a, b } = bestPair
       const s1items: SplitAssignment[] = []
       const s2items: SplitAssignment[] = []
-      let s1cost = 0
-      let s2cost = 0
+      let s1cost = 0, s2cost = 0
       for (const item of items) {
         const qty = item.quantity || 1
         if (item.productId && item.product) {
-          const ea = effective(item.productId, a.id)
-          const eb = effective(item.productId, b.id)
-          const pa = ea ? ea.price * qty : Infinity
-          const pb = eb ? eb.price * qty : Infinity
-          if (ea == null && eb == null) continue
-          // tie or preferred-store preference breaks ties
+          const ea = effective(item.productId, a.id)!
+          const eb = effective(item.productId, b.id)!
+          const pa = ea.price * qty, pb = eb.price * qty
           let chosen: 'a' | 'b'
           if (preferredStoreId === a.id && ea) chosen = 'a'
           else if (preferredStoreId === b.id && eb) chosen = 'b'
@@ -240,55 +249,37 @@ export async function computeComparison(
           const eff = chosen === 'a' ? ea : eb
           const store = chosen === 'a' ? a : b
           const assign: SplitAssignment = {
-            itemId: item.id,
-            name: item.product.name,
-            quantity: qty,
-            unit: item.product.unit,
-            price: Math.round((eff!.price * qty) * 100) / 100,
-            storeId: store.id,
-            storeName: store.name,
-            storeColor: store.color,
+            itemId: item.id, name: item.product.name, quantity: qty,
+            unit: item.product.unit, price: Math.round(eff.price * qty * 100) / 100,
+            storeId: store.id, storeName: store.name, storeColor: store.color,
           }
-          if (chosen === 'a') {
-            s1items.push(assign)
-            s1cost += assign.price
-          } else {
-            s2items.push(assign)
-            s2cost += assign.price
-          }
+          if (chosen === 'a') { s1items.push(assign); s1cost += assign.price }
+          else { s2items.push(assign); s2cost += assign.price }
         } else {
-          const store = item.manualStoreId === a.id ? a : item.manualStoreId === b.id ? b : null
-          if (!store) continue
+          const store = item.manualStoreId === a.id ? a : b
           const assign: SplitAssignment = {
-            itemId: item.id,
-            name: item.manualName || 'Manual item',
-            quantity: qty,
-            unit: null,
-            price: Math.round((item.manualPrice ?? 0) * qty * 100) / 100,
-            storeId: store.id,
-            storeName: store.name,
-            storeColor: store.color,
+            itemId: item.id, name: item.manualName || 'Manual item', quantity: qty,
+            unit: null, price: Math.round((item.manualPrice ?? 0) * qty * 100) / 100,
+            storeId: store.id, storeName: store.name, storeColor: store.color,
           }
-          if (store.id === a.id) {
-            s1items.push(assign)
-            s1cost += assign.price
-          } else {
-            s2items.push(assign)
-            s2cost += assign.price
-          }
+          if (store.id === a.id) { s1items.push(assign); s1cost += assign.price }
+          else { s2items.push(assign); s2cost += assign.price }
         }
       }
       const splitTotal = Math.round((s1cost + s2cost) * 100) / 100
-      const cheapestSingleTotal = cheapest?.total ?? splitTotal
-      const saving = Math.round((cheapestSingleTotal - splitTotal) * 100) / 100
+      // Only compare against a single-store total when that store covers every item.
+      const completeSingle = storeResults.filter(s => s.available === items.length).sort((x, y) => x.total - y.total)[0]
+      const cheapestSingleTotal = completeSingle?.total ?? splitTotal
+      const saving = completeSingle ? Math.round((cheapestSingleTotal - splitTotal) * 100) / 100 : 0
       split = {
         store1: { storeId: a.id, name: a.name, color: a.color, items: s1items, cost: Math.round(s1cost * 100) / 100 },
         store2: { storeId: b.id, name: b.name, color: b.color, items: s2items, cost: Math.round(s2cost * 100) / 100 },
-        splitTotal,
-        cheapestSingleTotal,
-        saving,
-        worthIt: saving > 0,
+        splitTotal, cheapestSingleTotal, cheapestSingleStoreName: completeSingle?.name ?? null,
+        saving, worthIt: saving > 0,
         travelWarning: saving > 0 && saving < TRAVEL_WARNING_THRESHOLD,
+      }
+      if (!completeSingle) {
+        splitMessage = 'This pair covers the full basket, but no single store stocks every item, so there is no complete single-store total to compare against.'
       }
     }
   }
@@ -303,6 +294,7 @@ export async function computeComparison(
     mostExpensive: mostExpensive ? { storeId: mostExpensive.storeId, name: mostExpensive.name, total: mostExpensive.total } : null,
     overallCheaperBy,
     split,
+    splitMessage,
     itemCount: items.length,
   }
 }

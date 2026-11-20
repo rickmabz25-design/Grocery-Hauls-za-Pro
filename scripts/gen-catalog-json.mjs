@@ -24,7 +24,7 @@ try {
 } catch {
   ;({ DatabaseSync: Database } = await import('node:sqlite'))
 }
-import { mkdirSync, writeFileSync } from 'fs'
+import { mkdirSync, readFileSync, writeFileSync } from 'fs'
 import path from 'path'
 import { fileURLToPath } from 'url'
 
@@ -46,11 +46,45 @@ const q = (sql) => db.prepare(sql).all()
 const iso = (v) => (v == null ? null : new Date(v).toISOString())
 const bool = (v) => Boolean(v)
 
-const stores = q(`SELECT * FROM Store WHERE active = 1 ORDER BY name ASC`).map((s) => ({
+const databaseStores = q(`SELECT * FROM Store WHERE active = 1 ORDER BY name ASC`).map((s) => ({
   ...s,
   active: bool(s.active),
 }))
-const categories = q(`SELECT * FROM Category ORDER BY sortOrder ASC`)
+
+// Preserve additional retailers in the checked-in static store catalogue.
+// The seed database may still contain only the original seven stores; without
+// this merge, every static build silently replaces the 15-store catalogue with
+// those seven database rows. Database records remain authoritative by name.
+let checkedInStores = []
+try {
+  const checkedIn = JSON.parse(readFileSync(path.join(OUT_DIR, 'stores.json'), 'utf8'))
+  checkedInStores = Array.isArray(checkedIn.stores) ? checkedIn.stores : []
+} catch {
+  checkedInStores = []
+}
+const storesByName = new Map(databaseStores.map((store) => [store.name.trim().toLowerCase(), store]))
+for (const store of checkedInStores) {
+  const key = String(store.name ?? '').trim().toLowerCase()
+  if (key && !storesByName.has(key)) storesByName.set(key, store)
+}
+const stores = [...storesByName.values()].sort((a, b) => a.name.localeCompare(b.name))
+const databaseCategories = q(`SELECT * FROM Category ORDER BY sortOrder ASC`)
+
+// Preserve supplemental categories in the checked-in static catalogue. The
+// seed database may not yet contain newer categories used by local imports.
+let checkedInCategories = []
+try {
+  const checkedIn = JSON.parse(readFileSync(path.join(OUT_DIR, 'categories.json'), 'utf8'))
+  checkedInCategories = Array.isArray(checkedIn.categories) ? checkedIn.categories : []
+} catch {
+  checkedInCategories = []
+}
+const categoriesByName = new Map(databaseCategories.map((category) => [category.name.trim().toLowerCase(), category]))
+for (const category of checkedInCategories) {
+  const key = String(category.name ?? '').trim().toLowerCase()
+  if (key && !categoriesByName.has(key)) categoriesByName.set(key, category)
+}
+const categories = [...categoriesByName.values()].sort((a, b) => a.sortOrder - b.sortOrder || a.name.localeCompare(b.name))
 const catById = new Map(categories.map((c) => [c.id, c]))
 const storeById = new Map(stores.map((s) => [s.id, s]))
 const productById = new Map(

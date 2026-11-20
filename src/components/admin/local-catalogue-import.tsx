@@ -1,6 +1,6 @@
 'use client'
 
-// Preview rebuild trigger: comment only; no application behaviour changes.
+// Preview rebuild trigger: verify current public/data/stores.json is deployed with the importer.
 
 import { useEffect, useState } from 'react'
 import * as XLSX from 'xlsx'
@@ -14,6 +14,36 @@ type Store = { id: string; name: string; color?: string }
 type Category = { id: string; name: string; icon?: string }
 type ParsedFile = { headers: string[]; records: Record<string, unknown>[]; name: string; defaultStart?: string; defaultEnd?: string }
 type FlyerCandidate = { id: number; name: string; normalPrice: string; promoPrice: string; sourceLine: string }
+
+const ALL_RETAILERS = '__all_retailers__'
+
+function canonicalStoreName(value: string): string {
+  const raw = value.trim()
+  const key = raw.toLowerCase().replace(/\s+/g, ' ')
+  const aliases: Record<string, string> = {
+    'boxer superstores': 'Boxer',
+    'boxer superstore': 'Boxer',
+    'food lovers market': "Food Lover's Market",
+    'shoprite liquorshop': 'Shoprite LiquorShop',
+    'tops at spar': 'TOPS at SPAR',
+    'boxer liquor': 'Boxer Liquors',
+  }
+  return aliases[key] || raw
+}
+
+function canonicalCategoryName(value: string): string {
+  const key = value.trim().toLowerCase().replace(/\s+/g, ' ')
+  const aliases: Record<string, string> = {
+    'beverages': 'Drinks',
+    'snacks & confectionery': 'Snacks',
+    'personal care': 'Toiletries',
+  }
+  return aliases[key] || value.trim()
+}
+
+function catalogueKey(value: string): string {
+  return value.toLowerCase().replace(/[^a-z0-9]/g, '')
+}
 
 const fields = [
   ['name', 'Product name *'], ['store', 'Store (optional if default selected)'],
@@ -61,15 +91,19 @@ export function LocalCatalogueImport() {
 
   useEffect(() => {
     setSavedCounts(getLocalCatalogueOverrideCounts())
-    fetch('/data/stores.json').then(r => r.json()).then(d => {
+    fetch('/data/stores.json', { cache: 'no-store' }).then(r => r.json()).then(d => {
       const list = Array.isArray(d.stores) ? d.stores : []
       setStores(list)
       if (list.length) setDefaultStore(list[0].id)
     }).catch(() => toast({ title: 'Could not load stores', description: 'The local store catalogue could not be read.', variant: 'destructive' }))
-    fetch('/data/categories.json').then(r => r.json()).then(d => setCategories(Array.isArray(d.categories) ? d.categories : []))
+    fetch('/data/categories.json', { cache: 'no-store' }).then(r => r.json()).then(d => setCategories(Array.isArray(d.categories) ? d.categories : []))
       .catch(() => toast({ title: 'Could not load categories', variant: 'destructive' }))
   }, [])
 
+  const inferredMapping = file ? autoMap(file.headers) as Record<string, string | undefined> : {}
+  // Resolve an explicit user choice first, then the detected heading. This keeps
+  // the selectors and review aligned if file/header state updates in separate renders.
+  const selectedColumn = (key: string) => mapping[key] || inferredMapping[key] || ''
   const counts = reviewSummary(rows)
   const approved = rows.filter(row => !rowHasError(row))
   const hasPromoWithoutDates = approved.some(row => (row.promoPrice != null || row.multiBuyQuantity != null) && (!row.startDate || !row.endDate))
@@ -121,6 +155,7 @@ export function LocalCatalogueImport() {
       if (defaultStart) setFlyerStartDate(defaultStart)
       if (defaultEnd) setFlyerEndDate(defaultEnd)
       setMapping(auto)
+      if (auto.store) setDefaultStore(ALL_RETAILERS)
       toast({ title: 'File read successfully', description: `${records.length} data rows found in ${selected.name}.` })
     } catch (error) {
       toast({ title: 'Could not read file', description: error instanceof Error ? error.message : 'Unsupported or damaged file.', variant: 'destructive' })
@@ -301,26 +336,47 @@ export function LocalCatalogueImport() {
 
   const review = () => {
     if (!file) return
+    // Keep date mapping resilient when a CSV/XLSX header uses a common
+    // variation or the mapping selector was left blank.
+    const headerKey = (header: string) => header.toLowerCase().replace(/[^a-z0-9]/g, '')
+    const findDateHeader = (kind: 'start' | 'end') => file.headers.find(header => {
+      const key = headerKey(header)
+      if (kind === 'start') {
+        return /^(startdate|promostartdate|promotionstartdate|offerstartdate|flyerstartdate|validfrom|validfromdate|from|fromdate|datefrom|validitystart|validityfrom)$/.test(key) ||
+          (/(start|from|validfrom|validitystart)/.test(key) && !/(end|until|expiry|expire|validto)/.test(key))
+      }
+      return /^(enddate|promoenddate|promotionenddate|offerenddate|flyerenddate|validto|validtodate|validuntil|validuntildate|to|todate|dateto|expirydate|expirationdate|expireson|validityend|validityuntil)$/.test(key) ||
+        (/(end|until|validto|validuntil|expiry|expires|expiration|validityend)/.test(key) && !/(start|from)/.test(key))
+    })
     const coreMap = {
-      name: mapping.name, store: mapping.store, unit: mapping.unit,
-      normalPrice: mapping.normalPrice, promoPrice: mapping.promoPrice, promoOffer: mapping.promoOffer, notes: mapping.notes,
-      startDate: mapping.startDate, endDate: mapping.endDate,
+      name: selectedColumn('name'), store: selectedColumn('store'), unit: selectedColumn('unit'),
+      normalPrice: selectedColumn('normalPrice'), promoPrice: selectedColumn('promoPrice'),
+      promoOffer: selectedColumn('promoOffer'), notes: selectedColumn('notes'),
+      startDate: selectedColumn('startDate') || findDateHeader('start'),
+      endDate: selectedColumn('endDate') || findDateHeader('end'),
     }
-    const storeName = stores.find(s => s.id === defaultStore)?.name
+    if (defaultStore === ALL_RETAILERS && !selectedColumn('store')) {
+      toast({ title: 'Store Name column required', description: 'Choose the Store Name column so each CSV row is assigned to its own retailer.', variant: 'destructive' })
+      return
+    }
+    const storeName = defaultStore === ALL_RETAILERS ? undefined : stores.find(s => s.id === defaultStore)?.name
     const built = buildReviewRows(file.records, coreMap, { defaultStoreName: storeName, defaultStart: file.defaultStart, defaultEnd: file.defaultEnd })
     const checked = built.map(row => {
       const issues = [...row.issues]
-      if (!row.storeName || !stores.some(s => s.name.toLowerCase() === row.storeName.toLowerCase())) {
+      const resolvedStoreName = canonicalStoreName(row.storeName)
+      if (!resolvedStoreName || !stores.some(s => catalogueKey(s.name) === catalogueKey(resolvedStoreName))) {
         issues.push({ code: 'unknown-store', message: `Store “${row.storeName || '(blank)'}” is not in the store catalogue`, severity: 'error' as const })
       }
       if ((row.promoPrice != null || row.multiBuyQuantity != null) && (!row.startDate || !row.endDate)) {
         issues.push({ code: 'promo-dates-required', message: 'Promotion and multi-buy rows need valid start and end dates', severity: 'error' as const })
       }
-      const categoryValue = mapping.category ? String(row.raw[mapping.category] || '').trim() : ''
-      if (categoryValue && !categories.some(c => c.name.toLowerCase() === categoryValue.toLowerCase())) {
+      const categoryColumn = selectedColumn('category')
+      const categoryValue = categoryColumn ? String(row.raw[categoryColumn] || '').trim() : ''
+      const canonicalCategory = canonicalCategoryName(categoryValue)
+      if (categoryValue && !categories.some(c => catalogueKey(c.name) === catalogueKey(canonicalCategory))) {
         issues.push({ code: 'unknown-category', message: `Category “${categoryValue}” was not found; choose a valid category in the source file`, severity: 'error' as const })
       }
-      return { ...row, issues }
+      return { ...row, storeName: resolvedStoreName, issues }
     })
     setRows(checked)
     setSummary(null)
@@ -330,16 +386,18 @@ export function LocalCatalogueImport() {
     setBusy(true)
     try {
       const payload = approved.map(row => {
-        const store = stores.find(s => s.name.toLowerCase() === row.storeName.toLowerCase())!
-        const categoryName = mapping.category ? String(row.raw[mapping.category] || '').trim() : ''
-        const category = categories.find(c => c.name.toLowerCase() === categoryName.toLowerCase())
+        const store = stores.find(s => catalogueKey(s.name) === catalogueKey(row.storeName))!
+        const categoryColumn = selectedColumn('category')
+        const categoryName = categoryColumn ? String(row.raw[categoryColumn] || '').trim() : ''
+        const canonicalCategory = canonicalCategoryName(categoryName)
+        const category = categories.find(c => catalogueKey(c.name) === catalogueKey(canonicalCategory))
         return {
           name: row.name, storeId: store.id, unit: row.unit,
-          barcode: mapping.barcode ? String(row.raw[mapping.barcode] || '').trim() : '',
-          brand: mapping.brand ? String(row.raw[mapping.brand] || '').trim() : '',
+          barcode: selectedColumn('barcode') ? String(row.raw[selectedColumn('barcode')] || '').trim() : '',
+          brand: selectedColumn('brand') ? String(row.raw[selectedColumn('brand')] || '').trim() : '',
           categoryId: category?.id, normalPrice: row.normalPrice, promoPrice: row.promoPrice,
           multiBuyQuantity: row.multiBuyQuantity, multiBuyPrice: row.multiBuyPrice, singleItemPrice: row.singleItemPrice,
-          offerText: row.promoOffer, startDate: row.startDate, endDate: row.endDate,
+          offerText: row.promoOffer.replace(/â€¢|•/g, 'and'), startDate: row.startDate, endDate: row.endDate,
         }
       })
       const result = await applyLocalCatalogueImport(payload)
@@ -409,15 +467,17 @@ export function LocalCatalogueImport() {
   return <div className="space-y-4">
     <section className="rounded-2xl border border-zinc-800 bg-zinc-900 p-5 space-y-3">
       <div className="flex items-center gap-2"><FileSpreadsheet className="h-5 w-5 text-sky-400" /><h2 className="font-bold text-sm">Local catalogue import</h2></div>
-      <p className="text-xs leading-relaxed text-zinc-400">CSV and Excel files are read inside this browser. Nothing is uploaded and nothing changes in the live catalogue. Choose a default retailer for rows without a store column.</p>
+      <p className="text-xs leading-relaxed text-zinc-400">CSV and Excel files are read inside this browser. Nothing is uploaded and nothing changes in the live catalogue. Choose a retailer for single-store files, or All Retailers when the CSV contains a Store Name column.</p>
       <div className="flex flex-wrap items-center gap-2">
         <Button type="button" variant="outline" onClick={downloadImportTemplate} className="border-zinc-700 text-zinc-200"><Download className="mr-2 h-4 w-4" /> Download import template</Button>
         <span className="text-[10px] text-zinc-500">One product per row · Excel or CSV · review before saving</span>
       </div>
       <label className="block text-[10px] font-bold uppercase text-zinc-400">Default retailer</label>
       <select value={defaultStore} onChange={e => setDefaultStore(e.target.value)} className="w-full rounded-lg border border-zinc-700 bg-zinc-800 p-2.5 text-sm text-white">
+        <option value={ALL_RETAILERS}>All Retailers — use CSV Store Name for every row</option>
         {stores.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
       </select>
+      {defaultStore === ALL_RETAILERS && <p className="text-[11px] text-sky-300">Combined retailer mode: every row must have a recognised Store Name. Blank or unknown retailers are blocked from saving.</p>}
       <div className="space-y-2 rounded-xl border border-zinc-700 bg-zinc-800/60 p-3">
         <label htmlFor="flyer-image-url" className="block text-[10px] font-bold uppercase text-zinc-400">Or paste a direct flyer page image link</label>
         <input
@@ -504,12 +564,12 @@ export function LocalCatalogueImport() {
       <h3 className="font-bold text-sm">Map columns</h3>
       <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
         {fields.map(([key, label]) => <label key={key} className="text-[10px] font-bold uppercase text-zinc-400">{label}
-          <select value={mapping[key] || ''} onChange={e => setMapping(m => ({ ...m, [key]: e.target.value }))} className="mt-1 h-9 w-full rounded-lg border border-zinc-700 bg-zinc-800 px-2 text-xs normal-case text-white">
+          <select value={selectedColumn(key)} onChange={e => setMapping(m => ({ ...m, [key]: e.target.value }))} className="mt-1 h-9 w-full rounded-lg border border-zinc-700 bg-zinc-800 px-2 text-xs normal-case text-white">
             <option value="">— skip —</option>{file.headers.map(h => <option key={h} value={h}>{h}</option>)}
           </select>
         </label>)}
       </div>
-      <Button onClick={review} disabled={!mapping.name || (!mapping.normalPrice && !mapping.promoPrice && !mapping.promoOffer)} className="bg-sky-600 hover:bg-sky-700">Review rows</Button>
+      <Button onClick={review} disabled={!selectedColumn('name') || (!selectedColumn('normalPrice') && !selectedColumn('promoPrice') && !selectedColumn('promoOffer'))} className="bg-sky-600 hover:bg-sky-700">Review rows</Button>
     </section>}
 
     {rows.length > 0 && <section className="rounded-2xl border border-zinc-800 bg-zinc-900 p-5 space-y-3">
@@ -524,7 +584,8 @@ export function LocalCatalogueImport() {
         {rows.map(row => <div key={row.sourceIndex} className="rounded-lg border border-zinc-800 p-3 text-xs">
           <div className="flex items-start justify-between gap-2"><b>{row.name || '(missing product name)'}</b><span className={rowHasError(row) ? 'text-red-400' : 'text-lime-400'}>{rowHasError(row) ? 'Needs correction' : 'Ready'}</span></div>
           <p className="mt-1 text-zinc-400">{row.storeName} · Normal {row.normalPrice == null ? '—' : `R${row.normalPrice.toFixed(2)}`} · Promo {row.promoPrice == null ? '—' : `R${row.promoPrice.toFixed(2)}`}</p>
-          {row.promoOffer && <p className="mt-1 text-sky-300">Flyer offer: {row.promoOffer}</p>}
+          {(row.promoPrice != null || row.multiBuyOffer) && <p className="mt-1 text-zinc-400">Promotion dates: {row.startDate || 'missing'} to {row.endDate || 'missing'}</p>}
+          {row.promoOffer && <p className="mt-1 text-sky-300">Flyer offer: {row.promoOffer.replace(/â€¢|â\u0080¢/g, 'and').replace(/•/g, 'and')}</p>}
           {row.multiBuyQuantity != null && row.multiBuyPrice != null && <p className="mt-1 font-medium text-emerald-300">Multi-buy: {row.multiBuyQuantity} items for R{row.multiBuyPrice.toFixed(2)} · R{(row.multiBuyPrice / row.multiBuyQuantity).toFixed(2)} per item</p>}
           {row.singleItemPrice != null && <p className="mt-1 text-lime-300">Single-item price: R{row.singleItemPrice.toFixed(2)}</p>}
           {row.notes && <p className="mt-1 text-zinc-400">Notes: {row.notes}</p>}

@@ -22,7 +22,7 @@ type ListItemT = {
   lowestStoreName: string | null
   promo: { promoPrice: number; normalPrice: number; storeName: string; storeColor: string } | null
   notOnPromo: boolean
-  multiBuyOffer: { quantity: number; bundlePrice: number; unitPrice: number; storeName: string; storeColor: string } | null
+  multiBuyOffer: { quantity: number; bundlePrice: number; unitPrice: number; singleItemPrice: number | null; offerText: string | null; storeName: string; storeColor: string } | null
 }
 
 export function ListDetailView() {
@@ -116,20 +116,20 @@ export function ListDetailView() {
               <p className="font-semibold text-sm text-zinc-900 truncate">{item.name}</p>
               <div className="flex flex-wrap items-center gap-1 mt-0.5">
                 {item.unit && <span className="text-[10px] text-zinc-400">{item.unit}</span>}
-                {item.promo ? (
-                  <span
-                    className="text-[9px] text-white rounded px-1.5 py-0.5 font-bold"
-                    style={{ background: item.promo.storeColor }}
-                  >
+                {item.multiBuyOffer && (
+                  <span className="text-[9px] text-white rounded px-1.5 py-0.5 font-bold" style={{ background: item.multiBuyOffer.storeColor }}>
+                    {item.multiBuyOffer.offerText || `Buy ${item.multiBuyOffer.quantity} for ${formatZAR(item.multiBuyOffer.bundlePrice)}`} at {item.multiBuyOffer.storeName} ({formatZAR(item.multiBuyOffer.unitPrice)} each)
+                  </span>
+                )}
+                {item.promo && discountPct(item.promo.promoPrice, item.promo.normalPrice) > 0 ? (
+                  <span className="text-[9px] text-white rounded px-1.5 py-0.5 font-bold" style={{ background: item.promo.storeColor }}>
                     {discountPct(item.promo.promoPrice, item.promo.normalPrice)}% off at {item.promo.storeName}
                   </span>
-                ) : item.multiBuyOffer ? (
-                  <span className="text-[9px] text-white rounded px-1.5 py-0.5 font-bold" style={{ background: item.multiBuyOffer.storeColor }}>
-                    {item.multiBuyOffer.quantity} for {formatZAR(item.multiBuyOffer.bundlePrice)} at {item.multiBuyOffer.storeName} ({formatZAR(item.multiBuyOffer.unitPrice)} each)
-                  </span>
-                ) : item.notOnPromo ? (
+                ) : null}
+                {!item.multiBuyOffer && (!item.promo || discountPct(item.promo.promoPrice, item.promo.normalPrice) <= 0) && item.notOnPromo ? (
                   <span className="text-[9px] italic text-zinc-400">Not on promotion.</span>
-                ) : item.source === 'manual' ? (
+                ) : null}
+                {item.source === 'manual' && !item.promo && !item.multiBuyOffer ? (
                   <span className="text-[9px] text-zinc-400">user-entered price</span>
                 ) : null}
               </div>

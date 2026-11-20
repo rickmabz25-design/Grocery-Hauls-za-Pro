@@ -367,9 +367,12 @@ const enrichItem = (item: AnyRecord, products: AnyRecord[], stores: AnyRecord[],
       storeName: active.storeName, storeColor: active.storeColor, storeId: active.storeId,
       endDate: active.endDate,
     } : null,
-    multiBuyOffer: !active && multiBuy ? {
+    // Keep quantity-qualified offers visible even when an ordinary promo exists.
+    multiBuyOffer: multiBuy ? {
       quantity: Number(multiBuy.quantity), bundlePrice: Number(multiBuy.bundlePrice),
       unitPrice: Number(multiBuy.bundlePrice) / Number(multiBuy.quantity),
+      singleItemPrice: multiBuy.singleItemPrice == null ? null : Number(multiBuy.singleItemPrice),
+      offerText: multiBuy.offerText || null,
       storeName: multiBuy.storeName, storeColor: multiBuy.storeColor, storeId: multiBuy.storeId,
       endDate: multiBuy.endDate,
     } : null,
@@ -383,40 +386,42 @@ async function compareList(state: AnyRecord, listId: string, storeIds: string[],
   const selected = storeIds.length ? stores.filter((s) => storeIds.includes(s.id)) : stores
   if (!selected.length) fail('No retailers are available to compare')
   const items = state.items.filter((i: AnyRecord) => i.listId === listId)
-  const effective = (productId: string, storeId: string) => {
+  const effective = (productId: string, storeId: string, quantity: number) => {
     const product = products.find((p) => p.id === productId)
     const productNameKey = normalizeProductName(product?.name)
     const now = new Date()
-    // A list line represents the imported pack (for example, 3 x 700g).
-    // Compare every retailer against that same pack size, not one loose unit
-    // at a retailer that has no multi-buy offer.
-    const activeOffers = multiBuyPromos.filter((p) =>
+    const multiBuy = multiBuyPromos.filter((p) =>
       (p.productId === productId || (productNameKey && normalizeProductName(p.name) === productNameKey)) &&
+      p.storeId === storeId &&
       new Date(p.startDate) <= now && new Date(p.endDate) >= now &&
       Number(p.quantity) > 0 && Number(p.bundlePrice) > 0
-    )
-    const referenceOffer = activeOffers[0]
-    const bundleQuantity = referenceOffer ? Number(referenceOffer.quantity) : 1
+    ).sort((x, y) => Number(x.bundlePrice) / Number(x.quantity) - Number(y.bundlePrice) / Number(y.quantity))[0]
     const normalUnitPrice = product?.storePrices?.[storeId]
-    const multiBuy = activeOffers.filter((p) => p.storeId === storeId)
-      .sort((a, b) => Number(a.bundlePrice) / Number(a.quantity) - Number(b.bundlePrice) / Number(b.quantity))[0]
-    if (multiBuy) {
-      const bundlePrice = Number(multiBuy.bundlePrice)
-      const singlePrice = multiBuy.singleItemPrice == null ? normalUnitPrice : Number(multiBuy.singleItemPrice)
-      const normalBundlePrice = singlePrice == null ? bundlePrice : Number(singlePrice) * Number(multiBuy.quantity)
-      return { price: bundlePrice, normal: normalBundlePrice, promoPrice: bundlePrice }
-    }
     const promo = promos.filter((p) => p.productId === productId && p.storeId === storeId &&
       new Date(p.startDate) <= now && new Date(p.endDate) >= now)
-      .sort((a, b) => a.promoPrice - b.promoPrice)[0]
-    if (promo) {
-      const unitPrice = Number(promo.promoPrice)
-      const normal = number(normalUnitPrice, promo.normalPrice)
-      return { price: unitPrice * bundleQuantity, normal: normal * bundleQuantity, promoPrice: unitPrice * bundleQuantity }
+      .sort((x, y) => x.promoPrice - y.promoPrice)[0]
+    // Ordinary promo price is the valid single-item price below the bundle
+    // threshold. Never infer a one-item price from a bundle's average unit cost.
+    const singlePrice = promo ? Number(promo.promoPrice) : normalUnitPrice == null ? null : Number(normalUnitPrice)
+    const normalPrice = normalUnitPrice == null
+      ? (promo?.normalPrice == null ? singlePrice : Number(promo.normalPrice))
+      : Number(normalUnitPrice)
+    const qty = Math.max(1, Math.floor(number(quantity, 1)))
+    let price: number | null = singlePrice == null ? null : singlePrice * qty
+    if (multiBuy && qty >= Number(multiBuy.quantity)) {
+      const bundleQty = Number(multiBuy.quantity)
+      const bundleCount = Math.floor(qty / bundleQty)
+      const remainder = qty % bundleQty
+      const remainderPrice = singlePrice ?? (multiBuy.singleItemPrice == null ? null : Number(multiBuy.singleItemPrice))
+      if (remainder === 0 || remainderPrice != null) {
+        price = bundleCount * Number(multiBuy.bundlePrice) + remainder * (remainderPrice ?? 0)
+      } else {
+        price = null
+      }
     }
-    return normalUnitPrice == null
-      ? null
-      : { price: number(normalUnitPrice) * bundleQuantity, normal: number(normalUnitPrice) * bundleQuantity, promoPrice: null as number | null }
+    if (price == null || !Number.isFinite(price)) return null
+    const normal = normalPrice == null ? price : Number(normalPrice) * qty
+    return { price: round(price), normal: round(normal), promoPrice: price < normal - 0.0001 ? round(price) : null }
   }
   const storeResults = selected.map((store) => {
     let total = 0, savings = 0, fullTotal = 0, available = 0, notOnPromo = 0, onPromo = 0
@@ -424,10 +429,10 @@ async function compareList(state: AnyRecord, listId: string, storeIds: string[],
     for (const item of items) {
       const qty = Math.max(1, number(item.quantity, 1))
       if (item.productId) {
-        const eff = effective(item.productId, store.id)
+        const eff = effective(item.productId, store.id, qty)
         if (!eff) { missingNames.push(products.find((p) => p.id === item.productId)?.name || 'Product'); continue }
-        available++; total += eff.price * qty; fullTotal += eff.normal * qty
-        if (eff.promoPrice != null) { onPromo++; savings += (eff.normal - eff.price) * qty } else notOnPromo++
+        available++; total += eff.price; fullTotal += eff.normal
+        if (eff.promoPrice != null) { onPromo++; savings += eff.normal - eff.price } else notOnPromo++
       } else if (item.manualStoreId === store.id && item.manualPrice != null) {
         available++; total += number(item.manualPrice) * qty; fullTotal += number(item.manualPrice) * qty; notOnPromo++
       } else missingNames.push(item.manualName || 'Manual item')
@@ -447,6 +452,40 @@ async function compareList(state: AnyRecord, listId: string, storeIds: string[],
   const mostExpensive = ranked.length > 1 ? ranked[ranked.length - 1] : null
   storeResults.forEach((s) => { s.cheapest = s.storeId === cheapest?.storeId; s.mostExpensive = s.storeId === mostExpensive?.storeId })
 
+  // Explain partial coverage when no two retailers can supply the full basket.
+  let splitMessage: string | null = null
+  if (selected.length >= 2 && items.length) {
+    let bestCoverage: { a: AnyRecord; b: AnyRecord; covered: number; total: number; missingNames: string[] } | null = null
+    for (let i = 0; i < selected.length; i++) for (let j = i + 1; j < selected.length; j++) {
+      const a = selected[i], b = selected[j]
+      let covered = 0, total = 0
+      const missingNames: string[] = []
+      for (const item of items) {
+        const qty = Math.max(1, number(item.quantity, 1))
+        if (item.productId) {
+          const pa = effective(item.productId, a.id, qty), pb = effective(item.productId, b.id, qty)
+          if (!pa && !pb) {
+            missingNames.push(products.find((p) => p.id === item.productId)?.name || 'Product')
+            continue
+          }
+          covered++
+          total += Math.min(pa ? pa.price : Infinity, pb ? pb.price : Infinity)
+        } else if (item.manualPrice != null && (item.manualStoreId === a.id || item.manualStoreId === b.id)) {
+          covered++
+          total += number(item.manualPrice) * qty
+        } else {
+          missingNames.push(item.manualName || 'Manual item')
+        }
+      }
+      if (!bestCoverage || covered > bestCoverage.covered || (covered === bestCoverage.covered && total < bestCoverage.total)) {
+        bestCoverage = { a, b, covered, total, missingNames }
+      }
+    }
+    if (bestCoverage && bestCoverage.covered < items.length) {
+      splitMessage = `No two-store combination can cover the full basket. The best pair, ${bestCoverage.a.name} and ${bestCoverage.b.name}, covers ${bestCoverage.covered} of ${items.length} products; ${items.length - bestCoverage.covered} are unavailable at both stores. A full-basket saving cannot be calculated.`
+    }
+  }
+
   let split: AnyRecord | null = null
   if (selected.length >= 2 && items.length) {
     let best: { a: AnyRecord; b: AnyRecord; total: number } | null = null
@@ -456,9 +495,9 @@ async function compareList(state: AnyRecord, listId: string, storeIds: string[],
       for (const item of items) {
         const qty = Math.max(1, number(item.quantity, 1))
         if (item.productId) {
-          const pa = effective(item.productId, a.id), pb = effective(item.productId, b.id)
+          const pa = effective(item.productId, a.id, qty), pb = effective(item.productId, b.id, qty)
           if (!pa && !pb) { valid = false; break }
-          total += Math.min(pa ? pa.price * qty : Infinity, pb ? pb.price * qty : Infinity)
+          total += Math.min(pa ? pa.price : Infinity, pb ? pb.price : Infinity)
         } else if (item.manualPrice != null && (item.manualStoreId === a.id || item.manualStoreId === b.id)) {
           total += number(item.manualPrice) * qty
         } else {
@@ -475,10 +514,10 @@ async function compareList(state: AnyRecord, listId: string, storeIds: string[],
         const qty = Math.max(1, number(item.quantity, 1))
         let index = -1, price = 0, store: AnyRecord | undefined
         if (item.productId) {
-          const pa = effective(item.productId, best.a.id), pb = effective(item.productId, best.b.id)
+          const pa = effective(item.productId, best.a.id, qty), pb = effective(item.productId, best.b.id, qty)
           if (!pa && !pb) continue
           index = preferred === best.a.id && pa ? 0 : preferred === best.b.id && pb ? 1 : pa && (!pb || pa.price <= pb.price) ? 0 : 1
-          price = (index === 0 ? pa!.price : pb!.price) * qty
+          price = (index === 0 ? pa!.price : pb!.price)
           store = index === 0 ? best.a : best.b
         } else {
           index = item.manualStoreId === best.a.id ? 0 : item.manualStoreId === best.b.id ? 1 : -1
@@ -512,7 +551,7 @@ async function compareList(state: AnyRecord, listId: string, storeIds: string[],
     cheapest: cheapest ? { storeId: cheapest.storeId, name: cheapest.name, total: cheapest.total, savings: cheapest.savings } : null,
     mostExpensive: mostExpensive ? { storeId: mostExpensive.storeId, name: mostExpensive.name, total: mostExpensive.total } : null,
     overallCheaperBy: cheapest && mostExpensive ? round(mostExpensive.total - cheapest.total) : 0,
-    split, itemCount: items.length,
+    split, splitMessage, itemCount: items.length,
   }
 }
 
